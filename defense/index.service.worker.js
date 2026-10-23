@@ -4,9 +4,9 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792745808|14372052';
+const CACHE_VERSION = '1792748593|14475516';
 /** @type {string} */
-const CACHE_PREFIX = 'Rogue Defense-sw-cache-';
+const CACHE_PREFIX = 'Kryptovyn: Defen-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 /** @type {string} */
 const OFFLINE_URL = 'index.offline.html';
