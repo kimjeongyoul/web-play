@@ -4,9 +4,9 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792750434|26107116';
+const CACHE_VERSION = '1792755313|22008500';
 /** @type {string} */
-const CACHE_PREFIX = 'Survivor Practic-sw-cache-';
+const CACHE_PREFIX = 'Kryptovyn: Rogue-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 /** @type {string} */
 const OFFLINE_URL = 'index.offline.html';
