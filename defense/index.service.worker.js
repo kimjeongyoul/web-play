@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792750646|16542961';
+const CACHE_VERSION = '1792754981|14822864';
 /** @type {string} */
 const CACHE_PREFIX = 'Kryptovyn: Defen-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
