@@ -3,7 +3,7 @@
 # 🎮 Web Play
 
 **만들고 있는 게임을 브라우저에서 바로.**
-설치 없이 브라우저에서. 핸드폰 터치 · 세로 화면은 만드는 중이에요.
+설치 없이 브라우저에서. 핸드폰 터치 됨 · 세로 화면은 로그라이크부터.
 
 <a href="https://kimjeongyoul.github.io/web-play/"><img src="https://img.shields.io/badge/%E2%96%B6%20%EC%A7%80%EA%B8%88%20%ED%95%B4%20%EB%B3%B4%EA%B8%B0-ffb547?style=for-the-badge" alt="지금 해 보기"></a>
 
