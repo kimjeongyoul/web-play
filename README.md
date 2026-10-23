@@ -15,6 +15,7 @@
 |:-:|---|---|:-:|
 | ⚔️ | **로그라이크** | 몰려오는 적, 터지는 화면. 조합을 모아 끝까지 버틴다 | [▶ 플레이](https://kimjeongyoul.github.io/web-play/survivor/) |
 | 🏰 | **디펜스** | 층마다 바뀌는 땅과 규칙. 탑을 키워 대왕을 막는다 | [▶ 플레이](https://kimjeongyoul.github.io/web-play/defense/) |
+| 🔍 | **예스노 탐정** | 예/아니오 질문 카드로 사건의 범인을 맞힌다 (1장 공개) | [▶ 플레이](https://kimjeongyoul.github.io/web-play/detective/) |
 
 <br>
 
