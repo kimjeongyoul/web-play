@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792733243|14532413';
+const CACHE_VERSION = '1792733685|14648376';
 /** @type {string} */
 const CACHE_PREFIX = 'Rogue Defense-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
