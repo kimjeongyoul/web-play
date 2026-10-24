@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1792813320|21801816';
+const CACHE_VERSION = '1792820796|21706382';
 /** @type {string} */
 const CACHE_PREFIX = 'Kryptovyn: Rogue-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
