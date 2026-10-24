@@ -38,10 +38,11 @@ def main() -> None:
         src = build / f"index{ext}"
         if src.exists():
             shutil.copy2(src, dest / f"{name}{ext}")
-    # Other files the page already serves (icons, splash) keep their names
+    # Other files (icons, splash, a manifest) keep their names; Godot's own PWA files are not copied
+    pwa = {"index.service.worker.js", "index.manifest.json", "index.offline.html"}
     for src in build.iterdir():
-        if src.is_file() and src.name != "index.html" and not any(src.name == f"index{e}" for e in ENGINE) \
-                and (dest / src.name).exists():
+        if src.is_file() and src.name != "index.html" and src.name not in pwa \
+                and not any(src.name == f"index{e}" for e in ENGINE) and not src.name.endswith(".import"):
             shutil.copy2(src, dest / src.name)
     html = (build / "index.html").read_text(encoding="utf-8")
     html = html.replace('src="index.js"', f'src="{name}.js"')
