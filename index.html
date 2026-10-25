@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>미리 해 보기</title>
 <meta property="og:title" content="만들고 있는 게임, 해 볼래?">
-<meta property="og:description" content="로그라이크 · 디펜스. 설치 없이 브라우저에서 바로">
+<meta property="og:description" content="로그라이크 · 타워 디펜스 · 추리 · 방치형. 설치 없이 브라우저에서 바로">
 <meta property="og:image" content="https://kimjeongyoul.github.io/web-play/share.png">
 <meta property="og:url" content="https://kimjeongyoul.github.io/web-play/">
 <meta name="twitter:card" content="summary_large_image">
@@ -19,6 +19,9 @@
   .game { display: block; background: var(--card); border-radius: 14px; padding: 18px; margin-bottom: 12px; color: var(--text); text-decoration: none; }
   .game strong { color: var(--accent); }
   .soon { color: var(--dim); font-size: 14px; }
+  .tags { margin: 6px 0 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #3a3348; color: #e8def8; }
+  .tag.main { background: var(--accent); color: #2a1d08; }
 </style>
 </head>
 <body>
@@ -26,10 +29,10 @@
   <h1>미리 해 보기</h1>
   <p>만들고 있는 게임이에요. 핸드폰에서는 끌어서 움직이고 눌러서 골라요. 모든 게임이 세로 · 가로로 돼요.</p>
   <p style="margin-top:-12px">📱 아이폰은 게임을 연 뒤 <b>공유 → 홈 화면에 추가</b>로 열면 주소창 없이 꽉 차요.</p>
-  <a class="game" href="survivor/"><strong>로그라이크</strong><div class="soon">몰려오는 적, 터지는 화면 · 핸드폰 세로 · 가로 모두, 끌어서 이동</div></a>
-  <a class="game" href="defense/"><strong>디펜스</strong><div class="soon">층마다 바뀌는 땅과 규칙 · 핸드폰 세로 · 가로 모두, 칸을 눌러 탑 짓기</div></a>
-  <a class="game" href="detective/"><strong>예스노 탐정</strong><div class="soon">예/아니오 질문 카드로 사건의 범인을 맞히는 추리 카드 게임 · 1장 공개 · 핸드폰 세로 · 가로 모두</div></a>
-  <a class="game" href="robot/"><strong>고장 난 로봇</strong><div class="soon">구석기에 떨어진 로봇이 시대마다 부위를 갈아 끼우며 미래로 돌아가는 방치형 · 핸드폰 세로 · 가로 모두</div></a>
+  <a class="game" href="survivor/"><strong>로그라이크</strong><div class="tags"><span class="tag main">액션</span><span class="tag">로그라이크</span><span class="tag">서바이벌</span><span class="tag">아이템 파밍</span></div><div class="soon">몰려오는 적, 터지는 화면 · 핸드폰 세로 · 가로 모두, 끌어서 이동</div></a>
+  <a class="game" href="defense/"><strong>디펜스</strong><div class="tags"><span class="tag main">타워 디펜스</span><span class="tag">전략</span><span class="tag">로그라이트</span></div><div class="soon">층마다 바뀌는 땅과 규칙 · 핸드폰 세로 · 가로 모두, 칸을 눌러 탑 짓기</div></a>
+  <a class="game" href="detective/"><strong>예스노 탐정</strong><div class="tags"><span class="tag main">추리</span><span class="tag">퍼즐</span><span class="tag">카드</span></div><div class="soon">예/아니오 질문 카드로 사건의 범인을 맞히는 추리 카드 게임 · 핸드폰 세로 · 가로 모두</div></a>
+  <a class="game" href="robot/"><strong>고장 난 로봇</strong><div class="tags"><span class="tag main">방치형</span><span class="tag">성장</span><span class="tag">부위 교체</span></div><div class="soon">구석기에 떨어진 로봇이 시대마다 부위를 갈아 끼우며 미래로 돌아가는 방치형 · 핸드폰 세로 · 가로 모두</div></a>
 </main>
 </body>
 </html>
