@@ -3,6 +3,7 @@
 # 2026-10-24 an iPhone kept showing a defense build from before a fix (settings all □) after newer
 # ones were up. index.html keeps its name (GitHub Pages caches it 10 minutes) and points at the new files.
 #   python -I tools/deploy.py <game folder, e.g. defense> <build folder> <version, e.g. the commit>
+#   python -I tools/deploy.py --splash <game folder>   (only the tall loading picture, into what is there)
 import re
 import shutil
 import sys
@@ -75,6 +76,18 @@ def patch_gl_ids(js: Path) -> str:
 
 
 def main() -> None:
+    # deploy.py --splash <game>: only the tall loading picture, into the build already there (no new export)
+    if len(sys.argv) == 3 and sys.argv[1] == "--splash":
+        dest = Path(__file__).resolve().parent.parent / sys.argv[2]
+        html = (dest / "index.html").read_text(encoding="utf-8")
+        if "tall loading picture" in html:
+            sys.exit(f"{sys.argv[2]}: already has the tall loading picture")
+        new = add_portrait_splash(sys.argv[2], dest, html)
+        if new == html:
+            sys.exit(f"{sys.argv[2]}: no splash_portrait.webp for it in gamedev-kit/art, nothing changed")
+        (dest / "index.html").write_text(new, encoding="utf-8")
+        print(f"{sys.argv[2]}: tall loading picture added")
+        return
     game, build, version = sys.argv[1], Path(sys.argv[2]), sys.argv[3]
     dest = Path(__file__).resolve().parent.parent / game
     if not re.fullmatch(r"[A-Za-z0-9_-]+", version) or not (build / "index.html").exists():

@@ -93,7 +93,7 @@ body {
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 
-	</head>
+	<script>/* tall loading picture upright (web-play/tools/deploy.py) */(function(){function pick(){var s=document.getElementById('status-splash');if(!s)return;var up=innerHeight>innerWidth;var want=up?'splash_portrait.webp':'index.png';if(s.getAttribute('src')!==want)s.setAttribute('src',want);s.style.objectFit=up?'cover':'';s.style.objectPosition=up?'center top':'';}document.addEventListener('DOMContentLoaded',pick);addEventListener('resize',pick);})();</script></head>
 	<body>
 		<canvas id="canvas">
 			Your browser does not support the canvas tag.
