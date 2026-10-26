@@ -35,6 +35,28 @@ NEW_ID = ("getNewId:table=>{var f=table.freeIds,id;if(f&&f.length){id=f.pop()}el
           "table.push(null);id=table.length-1}if(id>=GL.counter)GL.counter=id+1;return id}")
 GL_TABLES = ["buffers", "framebuffers", "programs", "queries", "renderbuffers", "shaders", "syncs", "textures", "vaos"]
 
+# An upright phone showed the wide title picture small between two flat bands while loading (2026-10-26
+# 사용자 아이폰 "세로화면 로딩는 이게 최선이야?"). A game with a tall picture (gamedev-kit/art/<concept>/splash/
+# splash_portrait.webp, 720x1560: the picture on top, a dark band under it for the loading bar) gets it next to
+# index.html and this script: upright, the loading picture is the tall one filling the screen from the top
+# (a shorter screen loses only some of the band); sideways, Godot's own index.png as before.
+CONCEPTS = {"survivor": "roguelike", "defense": "defense", "detective": "noir-cards", "robot": "idle-robot"}
+PORTRAIT = "splash_portrait.webp"
+PORTRAIT_SCRIPT = ("<script>/* tall loading picture upright (web-play/tools/deploy.py) */(function(){function pick(){"
+                   "var s=document.getElementById('status-splash');if(!s)return;var up=innerHeight>innerWidth;"
+                   f"var want=up?'{PORTRAIT}':'index.png';if(s.getAttribute('src')!==want)s.setAttribute('src',want);"
+                   "s.style.objectFit=up?'cover':'';s.style.objectPosition=up?'center top':'';}"
+                   "document.addEventListener('DOMContentLoaded',pick);"
+                   "addEventListener('resize',pick);})();</script>")
+
+
+def add_portrait_splash(game: str, dest: Path, html: str) -> str:
+    art = Path(__file__).resolve().parent.parent.parent / "gamedev-kit" / "art" / CONCEPTS.get(game, game) / "splash" / PORTRAIT
+    if not art.exists() or "</head>" not in html:
+        return html
+    shutil.copy2(art, dest / PORTRAIT)
+    return html.replace("</head>", PORTRAIT_SCRIPT + "</head>", 1)
+
 
 def patch_gl_ids(js: Path) -> str:
     code = js.read_text(encoding="utf-8")
@@ -85,6 +107,7 @@ def main() -> None:
         sys.exit("index.html did not have the expected engine references; nothing renamed there")
     # The page must not register a worker again (PWA off), and the old one gets the kill switch
     html = re.sub(r'"serviceWorker":"[^"]*"', '"serviceWorker":""', html)
+    html = add_portrait_splash(game, dest, html)
     (dest / "index.html").write_text(html, encoding="utf-8")
     (dest / "index.service.worker.js").write_text(KILL_SWITCH, encoding="utf-8")
     print(f"{game}: {name} ({', '.join(e for e in ENGINE if (dest / (name + e)).exists())}), GL tables {gl}")
