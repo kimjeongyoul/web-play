@@ -41,7 +41,7 @@ GL_TABLES = ["buffers", "framebuffers", "programs", "queries", "renderbuffers", 
 # splash_portrait.webp, 720x1560: the picture on top, a dark band under it for the loading bar) gets it next to
 # index.html and this script: upright, the loading picture is the tall one filling the screen from the top
 # (a shorter screen loses only some of the band); sideways, Godot's own index.png as before.
-CONCEPTS = {"survivor": "roguelike", "defense": "defense", "detective": "noir-cards", "robot": "idle-robot"}
+CONCEPTS = {"survivor": "roguelike", "defense": "defense", "detective": "noir-cards", "robot": "idle-robot", "random": "random-defense"}
 PORTRAIT = "splash_portrait.webp"
 PORTRAIT_SCRIPT = ("<script>/* tall loading picture upright (web-play/tools/deploy.py) */(function(){function pick(){"
                    "var s=document.getElementById('status-splash');if(!s)return;var up=innerHeight>innerWidth;"
