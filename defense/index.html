@@ -1,6 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
+	<head><script>/* Phone sound (gamedev-kit/web/audio_unlock.js, put in <head> before the engine by web-play/tools/deploy.py).
+   iOS Safari plays Web Audio only after resume() is called inside a touch, and pauses it ("interrupted")
+   after an ad, a call or a tab switch. Godot resumes its AudioContext from its own loop, outside the touch,
+   so on an iPhone the game stayed silent (2026-10-26 CrazyGames QA, PC fine). Every AudioContext the page
+   makes is kept here and resumed on each touch, click and key, and when the tab comes back. */
+(function () {
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC || AC.__unlockWrapped) return;
+  var made = [];
+  function Wrapped(options) {
+    var ctx = options === undefined ? new AC() : new AC(options);
+    made.push(ctx);
+    return ctx;
+  }
+  Wrapped.prototype = AC.prototype;
+  Wrapped.__unlockWrapped = true;
+  window.AudioContext = Wrapped;
+  if (window.webkitAudioContext) window.webkitAudioContext = Wrapped;
+  function wake() {
+    for (var i = 0; i < made.length; i++) {
+      var ctx = made[i];
+      if (ctx.state !== 'running' && ctx.state !== 'closed') {
+        try { ctx.resume(); } catch (e) {}
+        // A silent one-sample sound inside the touch is what unlocks older iOS versions
+        try { var b = ctx.createBuffer(1, 1, 22050); var s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0); } catch (e) {}
+      }
+    }
+  }
+  ['touchend', 'pointerup', 'click', 'keydown'].forEach(function (name) { document.addEventListener(name, wake, true); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) wake(); });
+})();
+</script>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
 		<title>Kryptovyn: Defense</title>

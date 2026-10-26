@@ -3,7 +3,7 @@
 # 2026-10-24 an iPhone kept showing a defense build from before a fix (settings all □) after newer
 # ones were up. index.html keeps its name (GitHub Pages caches it 10 minutes) and points at the new files.
 #   python -I tools/deploy.py <game folder, e.g. defense> <build folder> <version, e.g. the commit>
-#   python -I tools/deploy.py --splash <game folder>   (only the tall loading picture, into what is there)
+#   python -I tools/deploy.py --splash <game folder>   (only the tall loading picture and phone sound, into what is there)
 import re
 import shutil
 import sys
@@ -59,6 +59,18 @@ def add_portrait_splash(game: str, dest: Path, html: str) -> str:
     return html.replace("</head>", PORTRAIT_SCRIPT + "</head>", 1)
 
 
+# iPhone sound: gamedev-kit/web/audio_unlock.js resumes the engine's AudioContext inside each touch (an iPhone
+# stayed silent in the CrazyGames QA while PC played, 2026-10-26). In <head>, so it is there before the engine.
+AUDIO_UNLOCK = Path(__file__).resolve().parent.parent.parent / "gamedev-kit" / "web" / "audio_unlock.js"
+AUDIO_MARK = "gamedev-kit/web/audio_unlock.js"
+
+
+def add_audio_unlock(html: str) -> str:
+    if AUDIO_MARK in html or "<head>" not in html:
+        return html
+    return html.replace("<head>", "<head><script>" + AUDIO_UNLOCK.read_text(encoding="utf-8") + "</script>", 1)
+
+
 def patch_gl_ids(js: Path) -> str:
     code = js.read_text(encoding="utf-8")
     if NEW_ID in code:
@@ -80,13 +92,11 @@ def main() -> None:
     if len(sys.argv) == 3 and sys.argv[1] == "--splash":
         dest = Path(__file__).resolve().parent.parent / sys.argv[2]
         html = (dest / "index.html").read_text(encoding="utf-8")
-        if "tall loading picture" in html:
-            sys.exit(f"{sys.argv[2]}: already has the tall loading picture")
-        new = add_portrait_splash(sys.argv[2], dest, html)
+        new =add_audio_unlock(add_portrait_splash(sys.argv[2], dest, html) if "tall loading picture" not in html else html)
         if new == html:
-            sys.exit(f"{sys.argv[2]}: no splash_portrait.webp for it in gamedev-kit/art, nothing changed")
+            sys.exit(f"{sys.argv[2]}: nothing to add")
         (dest / "index.html").write_text(new, encoding="utf-8")
-        print(f"{sys.argv[2]}: tall loading picture added")
+        print(f"{sys.argv[2]}: tall loading picture and phone sound added")
         return
     game, build, version = sys.argv[1], Path(sys.argv[2]), sys.argv[3]
     dest = Path(__file__).resolve().parent.parent / game
@@ -120,7 +130,7 @@ def main() -> None:
         sys.exit("index.html did not have the expected engine references; nothing renamed there")
     # The page must not register a worker again (PWA off), and the old one gets the kill switch
     html = re.sub(r'"serviceWorker":"[^"]*"', '"serviceWorker":""', html)
-    html = add_portrait_splash(game, dest, html)
+    html = add_audio_unlock(add_portrait_splash(game, dest, html))
     (dest / "index.html").write_text(html, encoding="utf-8")
     (dest / "index.service.worker.js").write_text(KILL_SWITCH, encoding="utf-8")
     print(f"{game}: {name} ({', '.join(e for e in ENGINE if (dest / (name + e)).exists())}), GL tables {gl}")
