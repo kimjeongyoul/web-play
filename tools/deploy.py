@@ -102,6 +102,9 @@ def main() -> None:
     dest = Path(__file__).resolve().parent.parent / game
     if not re.fullmatch(r"[A-Za-z0-9_-]+", version) or not (build / "index.html").exists():
         sys.exit("usage: deploy.py <game> <build folder with index.html> <version>")
+    if not re.fullmatch(r"[a-z0-9-]+", game):
+        sys.exit("game folder: lowercase letters, digits and - only")
+    dest.mkdir(exist_ok=True)  # a game's first upload (랜덤디펜스 2026-10-27 stopped on FileNotFoundError)
     name = f"v_{version}"
     # Check the GL patch fits before anything in the game folder changes
     engine_js = (build / "index.js").read_text(encoding="utf-8")
