@@ -47,7 +47,7 @@ const NAMES = ['hero_knight', 'hero_fire_mage', 'hero_frost_hunter', 'hero_necro
   'boss_ogre', 'boss_demon', 'boss_warlock', 'p_fireball', 'p_crossbow_bolt', 'p_hammer', 'p_card', 'p_orbit_orb', 'p_missile', 'p_star_shard', 'p_shuriken',
   'c_main', 'c_power', 'c_rapid', 'c_pierce', 'c_wing', 'c_missile', 'c_orbit', 'c_lightning', 'c_nova', 'c_magnet', 'c_frost', 'c_crit', 'c_drone', 'c_bomb', 'c_life',
   'gem_small', 'gem_big', 'gem_huge', 'ebullet_round', 'ebullet_boss', 'heart_life',
-  'c_coin', 'c_lock', 'c_greed', 'c_growth', 'c_shop',
+  'c_coin', 'c_lock', 's_fire_mage', 's_frost_hunter', 's_necromancer', 's_gambler', 's_smith', 's_knight', 'c_greed', 'c_growth', 'c_shop',
   'd_bush', 'd_flowers', 'd_rock', 'd_stump', 'd_tree_pine', 'd_tree_round', 'd_grave_dead_tree', 'd_grave_tomb', 'd_hell_bone_pile', 'd_snow_ice_pillar', 'd_snow_pine', 'd_snow_rock', 't_slate', 't_ice']
 const loaded = Promise.all(NAMES.map((n) => new Promise((res) => { const i = new Image(); i.onload = res; i.onerror = res; i.src = `assets/${n}.webp`; IMG[n] = i })))
 
@@ -182,7 +182,7 @@ const stat = {
 }
 function resetRun() {
   Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], gold: 0 })
-  Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0 })
+  Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0, supers: 1 })
   foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; up = { main: 1 }
   timers = { missile: 0, lightning: 0, bomb: 6, drone: 0, wing: 0 }
   spawnQ = []; banner(`${t('wave')} 1`)
@@ -235,7 +235,7 @@ function waveRecipe(w) {
   if (w >= 11) list.push('golem', 'brute', 'charger')
   return list
 }
-const hpScale = (w) => 1.17 ** (w - 1) * (1 + 0.01 * (w - 1) ** 2) // x2.2 at wave 5, x7.4 at 10, x27 at 15 (BALANCE.md)
+const hpScale = (w) => 1.19 ** (w - 1) * (1 + 0.01 * (w - 1) ** 2) // x2.3 at wave 5, x8.3 at 10, x33 at 15 (BALANCE.md)
 function formation(w) {
   const kind = pick(waveRecipe(w)), shape = pick(['line', 'v', 'column', 'scatter', 'arc']), colX = rnd(80, W - 80)
   const n = kind === 'golem' || kind === 'brute' ? 1 + Math.floor(w / 6) : 4 + Math.floor(w / 2)
@@ -372,7 +372,7 @@ function kill(f) {
   game.kills++; game.score += Math.round(f.max * 10); game.gold += f.kind === 'boss' ? 60 * (f.boss / 5) : KINDS[f.kind].xp
   burst(f.x, f.y, f.r, f.kind === 'boss')
   if (f.kind === 'boss') {
-    audio.play('warp'); game.bossOn = false; game.bossDone = true; game.bossT[game.wave] = Math.round(game.time - game.bossFrom); game.shake = 14; game.flash = 0.25; audio.play('big'); ebul = []
+    audio.play('warp'); P.supers = Math.min(3, P.supers + 1); game.bossOn = false; game.bossDone = true; game.bossT[game.wave] = Math.round(game.time - game.bossFrom); game.shake = 14; game.flash = 0.25; audio.play('big'); ebul = []
     for (let i = 0; i < 30; i++) gems.push({ x: f.x + rnd(-80, 80), y: f.y + rnd(-60, 60), v: 3, huge: 1, pull: 1 })
     game.later = { t: 1.2, fn: () => { if (game.wave >= 15) finish(true); else nextWave() } } // game time, so pausing or leaving does not move the wave on
     return
@@ -394,6 +394,19 @@ function gainXp(v) {
   game.xp += v * (1 + 0.06 * mLv('growth'))
   if (game.xp >= game.need) { game.xp -= game.need; game.level++; game.need = needFor(game.level); openCards() }
 }
+// the hero's special (right mouse button, Space, or the button): clears enemy bullets, a rain of the hero's own shots
+const SUPER = { fire_mage: ['p_fireball', '#ff8a3a'], frost_hunter: ['p_crossbow_bolt', '#7fd4ff'], necromancer: ['p_orbit_orb', '#c07aff'], gambler: ['p_card', '#ffd34d'], smith: ['p_hammer', '#ffb35a'], knight: ['p_star_shard', '#bfe8ff'] }
+function useSuper() {
+  if (game.state !== 'run' || P.supers <= 0) return
+  P.supers--; ebul = []; P.inv = Math.max(P.inv, P.hero === 'knight' ? 3 : 1)
+  const [img, col] = SUPER[P.hero], d = stat.dmg * 3
+  for (let i = 0; i < 30; i++) shots.push({ x: 20 + (i % 10) * ((W - 40) / 9) + rnd(-10, 10), y: H + 40 + Math.floor(i / 10) * 90, vx: 0, vy: -1100, r: 22, dmg: d, pierce: 99, life: 2, img, rot: -Math.PI / 2, size: 64, glow: col, spin: img === 'p_hammer' || img === 'p_card' ? 12 : 0 })
+  if (P.hero === 'frost_hunter') for (const f of foes) f.slow = 4
+  fx.push({ k: 'bomb', x: P.x, y: P.y, R: 700, t: 0, d: 0.5 }); game.shake = 14; game.flash = 0; audio.play('big'); banner(t('special'), col)
+  try { if (save.shake) navigator.vibrate?.(60) } catch {}
+  superBtn()
+}
+function superBtn() { const b = $('superBtn'); b.querySelector('img').src = `assets/s_${P.hero}.webp`; b.querySelector('b').textContent = P.supers; b.classList.toggle('empty', P.supers <= 0) }
 function playerHit() {
   if (P.inv > 0) return
   P.lives--; game.hitAt.push(game.wave); P.inv = 2; game.shake = 16; game.flash = 0.2; audio.play('hurt')
@@ -548,7 +561,7 @@ function hud() {
   // level bar
   X.fillStyle = '#2a1d55'; X.fillRect(90, H - 22, W - 180, 12); X.fillStyle = '#6ff0ff'; X.fillRect(92, H - 20, (W - 184) * clamp(game.xp / game.need, 0, 1), 8)
   X.textAlign = 'center'; X.font = `900 16px ${FONT}`; X.lineWidth = 4; X.strokeText(`${t('lv')} ${game.level}`, W / 2, H - 28); X.fillStyle = '#fff'; X.fillText(`${t('lv')} ${game.level}`, W / 2, H - 28)
-  if (game.banner) {
+  if (game.banner && game.state === 'run') { // not over the card screen: it waits and shows when play goes on
     const b = game.banner, a = b.t < 0.2 ? b.t / 0.2 : b.t > 1.4 ? (1.8 - b.t) / 0.4 : 1, s = 1 + (b.t < 0.2 ? (0.2 - b.t) * 2 : 0)
     X.save(); X.globalAlpha = a; X.translate(W / 2, H * 0.38); X.scale(s, s); X.font = `900 58px ${FONT}`; X.lineWidth = 10; X.strokeText(b.text, 0, 0); X.fillStyle = b.col; X.fillText(b.text, 0, 0); X.restore()
   }
@@ -566,7 +579,7 @@ const input = {
     P.x = clamp(P.x, 30, W - 30); P.y = clamp(P.y, 120, H - 60)
   },
 }
-C.addEventListener('pointerdown', (e) => { if (game.state !== 'run') return; input.down = true; [input.px, input.py] = input.toField(e); game.hint = Math.min(game.hint, 0.4) })
+C.addEventListener('pointerdown', (e) => { if (game.state !== 'run' || e.button === 2) return; input.down = true; [input.px, input.py] = input.toField(e); game.hint = Math.min(game.hint, 0.4) })
 addEventListener('pointermove', (e) => {
   if (game.state !== 'run') return
   const [x, y] = input.toField(e)
@@ -575,10 +588,11 @@ addEventListener('pointermove', (e) => {
   P.x += (x - input.px) * 1.25; P.y += (y - input.py) * 1.25; input.px = x; input.py = y
 })
 addEventListener('pointerup', () => { input.down = false })
-addEventListener('keydown', (e) => { input.keys[e.code] = true; if (e.code === 'KeyP') togglePause() }) // no Esc: Playgama keeps it (PLAYGAMA.md 1.5.2)
+addEventListener('keydown', (e) => { input.keys[e.code] = true; if (e.code === 'KeyP') togglePause(); if (e.code === 'Space') { e.preventDefault(); useSuper() } }) // no Esc: Playgama keeps it (PLAYGAMA.md 1.5.2)
 addEventListener('keyup', (e) => { input.keys[e.code] = false })
 // test pilot: dodges bullets, drifts toward the densest column of foes
 function botMove(dt) {
+  if (P.supers > 0 && ebul.filter((b) => dist2(b, P) < 110 * 110).length >= 4) useSuper()
   let tx = P.x, ty = H * 0.78
   const near = foes.filter((f) => f.y > 0).sort((a, b) => b.y - a.y)[0]
   if (near) tx = near.x
@@ -643,14 +657,14 @@ function settingsPanel() {
 }
 function startRun() {
   audio.init(); resetRun(); game.state = 'run'; game.hint = 3
-  hide('title'); hide('over'); show('pauseBtn'); initDecos(); platform.banner(false); platform.msg('gameplay_started')
+  hide('title'); hide('over'); show('pauseBtn'); show('superBtn'); superBtn(); initDecos(); platform.banner(false); platform.msg('gameplay_started')
   const jump = +Q.get('wave') // test only: start at a later wave with that many cards already taken
   if (BOT && jump > 1) { game.wave = jump; game.waveT = 0; for (let i = 0; i < (jump - 1) * 2.4; i++) { const c = pick(CARDS.filter((c) => lvOf(c.id) < MAXLV)); up[c.id] = lvOf(c.id) + 1; game.level++ } banner(`${t('wave')} ${jump}`) }
 }
 function finish(won) {
   if (game.state === 'over') return
   game.levelAt[game.wave] = game.level
-  game.state = 'over'; runs++; hide('pauseBtn'); platform.msg('gameplay_stopped')
+  game.state = 'over'; runs++; hide('pauseBtn'); hide('superBtn'); platform.msg('gameplay_stopped')
   const reached = won ? 15 : game.wave
   if (won) game.gold += 200
   const earned = Math.round(game.gold * (1 + 0.1 * mLv('greed'))); save.gold += earned
@@ -671,18 +685,21 @@ function finish(won) {
 function togglePause() {
   if (game.state === 'run') { game.state = 'paused'; show('pause') } else if (game.state === 'paused') { hide('pause'); game.state = 'run' }
 }
-function goHome() { hide('shop'); game.state = 'title'; foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; game.wave = 1; hide('over'); hide('pause'); hide('pauseBtn'); show('title'); heroList() }
+function goHome() { hide('shop'); hide('superBtn'); game.state = 'title'; foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; game.wave = 1; hide('over'); hide('pause'); hide('pauseBtn'); show('title'); heroList() }
 $('playBtn').onclick = () => { audio.play('click'); startRun() }
 $('againBtn').onclick = () => platform.interstitial(startRun)
 $('homeBtn').onclick = () => platform.interstitial(goHome)
 $('pHomeBtn').onclick = () => { hide('pause'); game.state = 'run'; finish(false) } // ends the run: result screen, the gold earned so far is kept
 $('resumeBtn').onclick = togglePause
 $('pauseBtn').onclick = togglePause
+$('superBtn').addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); useSuper() })
+addEventListener('contextmenu', (e) => e.preventDefault())
+C.addEventListener('pointerdown', (e) => { if (e.button === 2) useSuper() })
 $('setBtn').onclick = () => settingsPanel()
 $('sClose').onclick = () => hide('panel')
 $('shopBtn').onclick = () => { audio.init(); audio.play('click'); shopPanel() }
 $('uClose').onclick = () => { hide('shop'); heroList() }
-$('contBtn').onclick = () => platform.rewardedAd((ok) => { if (!ok) return; platform.banner(false); game.cont = true; P.lives = 1; P.inv = 3; ebul = []; hide('over'); show('pauseBtn'); game.state = 'run' })
+$('contBtn').onclick = () => platform.rewardedAd((ok) => { if (!ok) return; platform.banner(false); game.cont = true; show('superBtn'); P.lives = 1; P.inv = 3; ebul = []; hide('over'); show('pauseBtn'); game.state = 'run' })
 document.addEventListener('visibilitychange', () => { audio.apply(); if (document.hidden && game.state === 'run') togglePause() })
 
 // ---------------------------------------------------------------- loop
@@ -690,6 +707,7 @@ function resize() { const d = Math.min(2, devicePixelRatio || 1); C.width = Math
   const sc = Math.min(innerWidth / W, innerHeight / H), u = $('ui').style // buttons and screens sit on the playfield, not the far screen edge
   const wide = innerWidth > innerHeight * 1.15 // landscape: menus use the whole window, the field is too narrow for them
   document.body.classList.toggle('wide', wide)
+  $('superBtn').style.right = wide ? (innerWidth - W * sc) / 2 + 12 + 'px' : ''
   $('pauseBtn').style.right = wide ? (innerWidth - W * sc) / 2 + 12 + 'px' : '' // in a run the pause button stays on the field's corner
   if (wide) { u.left = u.top = '0px'; u.width = innerWidth + 'px'; u.height = innerHeight + 'px' } else { u.left = (innerWidth - W * sc) / 2 + 'px'; u.top = (innerHeight - H * sc) / 2 + 'px'; u.width = W * sc + 'px'; u.height = H * sc + 'px' } }
 addEventListener('resize', resize); resize()
@@ -729,4 +747,4 @@ function simRun(hero, maxSecs = 900) {
   return window.__runs[window.__runs.length - 1]
 }
 if (BOT && HEROES.includes(Q.get('hero'))) save.hero = P.hero = Q.get('hero')
-if (BOT || Q.has('debug')) window.__sh = { game, P, save, audio, platform, startRun, openCards, goHome, finish, shopPanel, heroList, settings: settingsPanel, measureDps, simRun, HEROES, CARDS, get foes() { return foes }, get up() { return up } }
+if (BOT || Q.has('debug')) window.__sh = { game, P, save, audio, platform, startRun, useSuper, openCards, goHome, finish, shopPanel, heroList, settings: settingsPanel, measureDps, simRun, HEROES, CARDS, get foes() { return foes }, get up() { return up } }

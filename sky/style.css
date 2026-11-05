@@ -96,3 +96,9 @@ button{min-height:48px}
 .earn b{font-size:32px}.earn b img{width:36px;height:36px}
 }
 @media (max-height:620px){#shop .chip{position:absolute;top:10px;left:12px}}
+
+#superBtn{position:absolute;right:12px;bottom:calc(46px + env(safe-area-inset-bottom));width:84px;height:84px;min-width:0;padding:0;border-radius:50%;background:#ffd34d;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+#superBtn img{width:62px;height:62px}
+#superBtn b{position:absolute;right:-4px;top:-4px;min-width:30px;height:30px;border-radius:15px;background:#ff4d5e;color:#fff;border:3px solid #2a1d55;font-size:18px;line-height:24px;box-sizing:border-box}
+#superBtn.empty{filter:grayscale(1) brightness(.7)}
+#superBtn.empty b{background:#777}
