@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>AI Invasion: Melt the World</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="loading"><div class="brand">AI<br>INVASION</div><div class="bar"><i id="loadbar"></i></div></div>
+
+<div id="hud" class="hide">
+  <div class="time" id="time">60</div>
+  <div class="score"><b id="score">0</b><small id="sizeText"></small></div>
+  <div class="eaten"><i id="eatenBar"></i><span id="eatenText"></span></div>
+  <button class="round" id="pauseBtn" aria-label="Pause"><span class="ico-pause"></span></button>
+  <div class="combo" id="combo"></div>
+  <div class="banner" id="banner"></div>
+  <div class="hint" id="hint"></div>
+</div>
+<div id="float"></div>
+
+<section id="title" class="screen hide">
+  <div class="logo">AI<br>INVASION<small>MELT THE WORLD</small></div>
+  <div class="townPick">
+    <button class="nav" id="prevTown">&lsaquo;</button>
+    <div class="town"><b id="townName"></b><span class="stars" id="townStars"></span><small id="townLock"></small></div>
+    <button class="nav" id="nextTown">&rsaquo;</button>
+  </div>
+  <button class="go" id="playBtn"></button>
+  <div class="row">
+    <button class="sub" id="upBtn"></button>
+    <button class="sub" id="skinBtn"></button>
+    <button class="round" id="setBtn" aria-label="Settings"><span class="ico-gear"></span></button>
+  </div>
+  <div class="gold"><span class="coin"></span><b id="goldTitle">0</b></div>
+</section>
+
+<section id="result" class="screen hide">
+  <h2 id="resTitle"></h2>
+  <div class="stars big" id="resStars"></div>
+  <div class="resLine"><span id="resEatenLabel"></span><b id="resEaten"></b></div>
+  <div class="resLine"><span id="resBestLabel"></span><b id="resBest"></b></div>
+  <div class="gain"><span class="coin"></span><b id="resGold">0</b></div>
+  <button class="sub ad" id="doubleBtn"></button>
+  <div id="resUp" class="upgrades"></div>
+  <button class="go" id="againBtn"></button>
+  <button class="sub ghost" id="homeBtn"></button>
+</section>
+
+<section id="panel" class="screen hide">
+  <h2 id="panelTitle"></h2>
+  <div class="gold"><span class="coin"></span><b id="goldPanel">0</b></div>
+  <div id="panelBody"></div>
+  <button class="go" id="panelClose"></button>
+</section>
+
+<section id="pause" class="screen hide">
+  <h2 id="pauseTitle"></h2>
+  <button class="go" id="resumeBtn"></button>
+  <button class="sub" id="quitBtn"></button>
+</section>
+
+<script>
+(function () {
+  var started = false
+  function go() { if (started) return; started = true; var s = document.createElement('script'); s.type = 'module'; s.src = 'game.js'; document.body.appendChild(s) }
+  if (/[?&]nobridge/.test(location.search)) { window.__noBridge = true; go(); return }
+  function local() { var s = document.createElement('script'); s.src = 'playgama-bridge.js'; s.onload = go; s.onerror = go; document.head.appendChild(s) }
+  var cdn = document.createElement('script'), done = false
+  var timer = setTimeout(function () { if (!done) { done = true; local() } }, 2000)
+  cdn.src = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
+  cdn.onload = function () { if (!done) { done = true; clearTimeout(timer); go() } }
+  cdn.onerror = function () { if (!done) { done = true; clearTimeout(timer); local() } }
+  document.head.appendChild(cdn)
+})()
+</script>
+</body>
+</html>
