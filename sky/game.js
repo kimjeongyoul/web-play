@@ -275,7 +275,7 @@ function tick(dt) {
   if (!bossWave || !game.bossOn) game.waveT += dt
   if (bossWave && !game.bossOn && !game.bossDone && game.waveT > 2.5 && !foes.some((f) => f.kind === 'boss')) spawnBoss() // bossDone: once per wave (it came back during the 1.2 s after the kill)
   if (!bossWave) {
-    if (game.waveT > 1 && game.forms < formsFor(game.wave) && spawnQ.length < 4 && (game._next ?? 0) <= game.time) { formation(game.wave); game.forms++; game._next = game.time + clamp(2.6 - game.wave * 0.1, 1.1, 2.6) }
+    if (game.waveT > 0.3 && game.forms < formsFor(game.wave) && spawnQ.length < 4 && (game._next ?? 0) <= game.time) { formation(game.wave); game.forms++; game._next = game.time + clamp(2.6 - game.wave * 0.1, 1.1, 2.6) }
     if (!game.later && ((game.forms >= formsFor(game.wave) && !spawnQ.length && !foes.length) || game.waveT >= WAVE_MAX)) game.later = { t: 0.8, fn: nextWave } // cleared: next wave
   } else if (game.bossOn && (game._next ?? 0) <= game.time) { formation(Math.max(1, game.wave - 2)); game._next = game.time + 4 }
   }
@@ -290,7 +290,7 @@ function tick(dt) {
   for (let i = shots.length - 1; i >= 0; i--) {
     const s = shots[i]
     s.life -= dt
-    if (s.home) { const f = nearest(s, 260); if (f) { const a = Math.atan2(f.y - s.y, f.x - s.x), sp = 720; s.vx += (Math.cos(a) * sp - s.vx) * Math.min(1, dt * 6); s.vy += (Math.sin(a) * sp - s.vy) * Math.min(1, dt * 6) } }
+    if (s.home) { const f = nearest(s, 600); if (f) { const a = Math.atan2(f.y - s.y, f.x - s.x), sp = 720; s.vx += (Math.cos(a) * sp - s.vx) * Math.min(1, dt * 6); s.vy += (Math.sin(a) * sp - s.vy) * Math.min(1, dt * 6) } }
     s.x += s.vx * dt; s.y += s.vy * dt
     if (s.coin && (s.x < 10 || s.x > W - 10)) { s.vx = -s.vx; s.x = clamp(s.x, 10, W - 10) }
     if (s.life <= 0 || s.y < -60 || s.y > H + 60 || s.x < -60 || s.x > W + 60) { shots.splice(i, 1); continue }
@@ -310,7 +310,7 @@ function tick(dt) {
   // foes
   for (let i = foes.length - 1; i >= 0; i--) {
     const f = foes[i]; f.t += dt; if (f.hitT > 0) f.hitT -= dt; if (f.slow > 0) f.slow -= dt
-    const sm = f.slow > 0 ? 0.5 : 1
+    const sm = (f.slow > 0 ? 0.5 : 1) * (f.y < 70 && f.kind !== 'boss' ? 3 : 1) // enter the screen quickly, then their own speed
     if (f.kind === 'boss') bossAI(f, dt)
     else {
       const k = KINDS[f.kind]
@@ -417,7 +417,7 @@ function weapons(dt) {
   if (lvOf('missile')) { timers.missile -= dt; if (timers.missile <= 0) { timers.missile = 1.3 - 0.12 * lvOf('missile'); for (let i = 0; i < lvOf('missile'); i++) shots.push({ x: P.x + (i % 2 ? 20 : -20), y: P.y, vx: (i % 2 ? 1 : -1) * 260, vy: -200, r: 9, dmg: d * 2.2, home: 1, boom: 50, life: 2.2, img: 'p_missile', size: 42, aim: 1, glow: '#ff9a6a' }) } }
   if (lvOf('orbit')) { const n = 1 + lvOf('orbit'); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n, o = { x: P.x + Math.cos(a) * 80, y: P.y + Math.sin(a) * 80 }; for (let k = ebul.length - 1; k >= 0; k--) if (dist2(o, ebul[k]) < (18 + ebul[k].r) ** 2) { burst(ebul[k].x, ebul[k].y, 8, false); ebul.splice(k, 1) } // orbs block bullets
       for (const f of foes) if (!f.dead && dist2(o, f) < (f.r + 14) ** 2 && (f.orbT || 0) < game.time) { f.orbT = game.time + 0.25; hurt(f, d * 1.2) } } }
-  if (lvOf('lightning')) { timers.lightning -= dt; if (timers.lightning <= 0) { timers.lightning = 1.6 - 0.15 * lvOf('lightning'); let from = P, hit = new Set(); for (let j = 0; j < 2 + lvOf('lightning'); j++) { const f = nearest(from, 320, hit); if (!f) break; bolts.push({ a: { x: from.x, y: from.y }, b: { x: f.x, y: f.y }, t: 0 }); hit.add(f); hurt(f, d * 2.4); from = f } } }
+  if (lvOf('lightning')) { timers.lightning -= dt; if (timers.lightning <= 0) { timers.lightning = 1.6 - 0.15 * lvOf('lightning'); let from = P, hit = new Set(); for (let j = 0; j < 2 + lvOf('lightning'); j++) { const f = nearest(from, j ? 320 : 1400, hit); if (!f) break; bolts.push({ a: { x: from.x, y: from.y }, b: { x: f.x, y: f.y }, t: 0 }); hit.add(f); hurt(f, d * 2.4); from = f } } }
   if (lvOf('drone')) { timers.drone -= dt * stat.rate; if (timers.drone <= 0) { timers.drone = 0.4; for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1, dx = P.x + s * (70 + Math.floor(i / 2) * 26), dy = P.y + 40; shots.push({ x: dx, y: dy, vx: 0, vy: -800, r: 8, dmg: d * 0.9, pierce: 0, life: 1.3, img: 'p_shuriken', spin: 18, size: 30, glow: '#bfe8ff' }) } } }
   if (lvOf('bomb')) { timers.bomb -= dt; if (timers.bomb <= 0) { timers.bomb = 14 - 1.6 * lvOf('bomb'); fx.push({ k: 'bomb', x: P.x, y: P.y - 200, R: 520, t: 0, d: 0.6 }); ebul = []; game.shake = 12; audio.play('big'); for (const f of [...foes]) hurt(f, d * 6 * (f.kind === 'boss' ? 0.5 : 1)) } }
 }
