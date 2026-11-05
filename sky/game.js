@@ -799,6 +799,7 @@ function frame(now) {
 async function boot() {
   await platform.init()
   await readSave()
+  if (Q.has('allsky')) save.skyMax = Math.max(save.skyMax || 1, 5) // try every sky without clearing (test link)
   if (BOT && +Q.get('sky') > 0) { save.skyMax = Math.max(save.skyMax || 1, +Q.get('sky')); save.sky = +Q.get('sky') }
   if (BOT && HEROES.includes(Q.get('hero'))) { save.hero = P.hero = Q.get('hero'); if (!save.owned.includes(save.hero)) save.owned.push(save.hero) } // tests: that hero, owned
   const asked = (window.bridge?.platform?.language || navigator.language || 'en').toLowerCase().slice(0, 2)
