@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Skyfall Squad</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title" class="screen">
+    <h1 id="tTitle"></h1>
+    <div id="heroes"></div>
+    <div id="heroInfo"></div>
+    <div class="btns"><button id="shopBtn"><img src="assets/c_shop.webp"><span id="shopTx"></span></button><button id="playBtn" class="big"></button></div>
+    <div id="gold" class="chip"><img src="assets/c_coin.webp"><b id="goldN">0</b></div>
+    <button id="setBtn" class="corner">⚙</button>
+  </div>
+  <div id="cards" class="screen hide"><h2 id="cTitle"></h2><div id="cSub"></div><div id="cardRow"></div></div>
+  <div id="over" class="screen hide">
+    <h2 id="oTitle"></h2>
+    <div class="stats"><div><span id="oWaveL"></span><b id="oWave"></b></div><div><span id="oKillL"></span><b id="oKill"></b></div><div><span id="oScoreL"></span><b id="oScore"></b></div><div><span id="oBestL"></span><b id="oBest"></b></div></div>
+    <div class="earn"><span id="oGoldL"></span><b><img src="assets/c_coin.webp"><span id="oGold"></span></b></div>
+    <button id="contBtn" class="big hide"></button>
+    <button id="againBtn" class="big"></button>
+    <button id="homeBtn"></button>
+  </div>
+  <div id="pause" class="screen hide"><h2 id="pTitle"></h2><button id="resumeBtn" class="big"></button><button id="pHomeBtn"></button></div>
+  <div id="shop" class="screen hide"><h2 id="uTitle"></h2><div class="chip"><img src="assets/c_coin.webp"><b id="uGold"></b></div><div id="uRows"></div><button id="uClose" class="big"></button></div>
+  <div id="panel" class="screen hide"><h2 id="sTitle"></h2><div id="sRows"></div><button id="sClose" class="big"></button></div>
+  <button id="pauseBtn" class="corner hide">II</button>
+</div>
+<script src="text.js"></script>
+<script>
+// Playgama bridge first (its CDN, else the copy here), then the game; ?nobridge skips it (local play, tests)
+(function () {
+  var started = false
+  function go() { if (started) return; started = true; var s = document.createElement('script'); s.src = 'game.js'; document.body.appendChild(s) }
+  if (/[?&](nobridge|sim)/.test(location.search)) { window.__noBridge = true; go(); return }
+  function local() { var s = document.createElement('script'); s.src = 'playgama-bridge.js'; s.onload = go; s.onerror = go; document.head.appendChild(s) }
+  var cdn = document.createElement('script'), done = false
+  var timer = setTimeout(function () { if (!done) { done = true; local() } }, 2000)
+  cdn.src = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
+  cdn.onload = function () { if (!done) { done = true; clearTimeout(timer); go() } }
+  cdn.onerror = function () { if (!done) { done = true; clearTimeout(timer); local() } }
+  document.head.appendChild(cdn)
+})()
+</script>
+</body>
+</html>
