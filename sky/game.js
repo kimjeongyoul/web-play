@@ -92,7 +92,8 @@ const ZONES = [ // waves 1-5 moss forest, 6-10 old graveyard, 11-15 snow peaks
   { ground: '#6b6a86', tile: 't_slate', deco: ['d_grave_dead_tree', 'd_grave_tomb', 'd_hell_bone_pile', 'd_rock'] },
   { ground: '#dfefff', tile: 't_ice', deco: ['d_snow_pine', 'd_snow_rock', 'd_snow_ice_pillar'] },
 ]
-const WAVE_TIME = 20
+const WAVE_MAX = 45 // a wave ends when all its formations came and the sky is clear; this is only the safety limit
+const formsFor = (w) => 6 + Math.floor(w * 0.6) // formations per wave (BALANCE.md 3)
 
 // ---------------------------------------------------------------- audio (ogg files: Kenney CC0 sounds, SketchyLogic CC0 music; README 'Sound')
 const SFX = { shot: ['shot', 0.18, 70], hit: ['hit', 0.25, 45], pop: ['pop', 0.45, 40], big: ['big', 1, 0], gem: ['gem', 0.35, 30], level: ['level', 0.7, 0], hurt: ['hurt', 0.8, 0], boss: ['boss_intro', 0.9, 0], click: ['click', 0.8, 0], buy: ['buy', 0.8, 0], deny: ['deny', 0.7, 0], win: ['win', 0.9, 0], warp: ['warp', 0.7, 0] }
@@ -180,7 +181,7 @@ const stat = {
   get magnet() { return 140 * (1 + 0.5 * lvOf('magnet')) * (1 + 0.12 * mLv('magnet')) },
 }
 function resetRun() {
-  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], gold: 0 })
+  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], gold: 0 })
   Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0 })
   foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; up = { main: 1 }
   timers = { missile: 0, lightning: 0, bomb: 6, drone: 0, wing: 0 }
@@ -256,7 +257,7 @@ function spawn(kind, x, y, extra = {}) {
 function spawnBoss() {
   const B = BOSSES[game.wave], hp = B.hp * hpScale(game.wave) / hpScale(game.wave >= 10 ? 10 : 5) * (game.wave === 15 ? 1.1 : 1)
   foes.push({ kind: 'boss', boss: game.wave, img: B.img, x: W / 2, y: -120, vx: 0, vy: 90, hp, max: hp, r: B.r, t: 0, shoot: 1.5, slow: 0, hitT: 0, ph: 0 })
-  game.bossOn = true; game.bossFrom = game.time; banner(t('boss'), '#ff5a6a'); audio.play('boss')
+  game.bossOn = true; game.bossN = (game.bossN || 0) + 1; game.bossFrom = game.time; banner(t('boss'), '#ff5a6a'); audio.play('boss')
 }
 function banner(text, col = '#fff') { game.banner = { text, t: 0, col } }
 
@@ -272,10 +273,10 @@ function tick(dt) {
   const bossWave = !!BOSSES[game.wave]
   if (game.noWaves) { /* balance dummy */ } else {
   if (!bossWave || !game.bossOn) game.waveT += dt
-  if (bossWave && !game.bossOn && game.waveT > 2.5 && !foes.some((f) => f.kind === 'boss')) spawnBoss()
+  if (bossWave && !game.bossOn && !game.bossDone && game.waveT > 2.5 && !foes.some((f) => f.kind === 'boss')) spawnBoss() // bossDone: once per wave (it came back during the 1.2 s after the kill)
   if (!bossWave) {
-    if (game.waveT > 1 && spawnQ.length < 4 && (game._next ?? 0) <= game.time) { formation(game.wave); game._next = game.time + clamp(2.6 - game.wave * 0.1, 1.1, 2.6) }
-    if (game.waveT >= WAVE_TIME) nextWave()
+    if (game.waveT > 1 && game.forms < formsFor(game.wave) && spawnQ.length < 4 && (game._next ?? 0) <= game.time) { formation(game.wave); game.forms++; game._next = game.time + clamp(2.6 - game.wave * 0.1, 1.1, 2.6) }
+    if (!game.later && ((game.forms >= formsFor(game.wave) && !spawnQ.length && !foes.length) || game.waveT >= WAVE_MAX)) game.later = { t: 0.8, fn: nextWave } // cleared: next wave
   } else if (game.bossOn && (game._next ?? 0) <= game.time) { formation(Math.max(1, game.wave - 2)); game._next = game.time + 4 }
   }
   for (let i = spawnQ.length - 1; i >= 0; i--) if (spawnQ[i].at <= game.time) { const s = spawnQ[i]; spawn(s.kind, s.x, s.y); spawnQ.splice(i, 1) }
@@ -371,7 +372,7 @@ function kill(f) {
   game.kills++; game.score += Math.round(f.max * 10); game.gold += f.kind === 'boss' ? 60 * (f.boss / 5) : KINDS[f.kind].xp
   burst(f.x, f.y, f.r, f.kind === 'boss')
   if (f.kind === 'boss') {
-    audio.play('warp'); game.bossOn = false; game.bossT[game.wave] = Math.round(game.time - game.bossFrom); game.shake = 14; game.flash = 0.25; audio.play('big'); ebul = []
+    audio.play('warp'); game.bossOn = false; game.bossDone = true; game.bossT[game.wave] = Math.round(game.time - game.bossFrom); game.shake = 14; game.flash = 0.25; audio.play('big'); ebul = []
     for (let i = 0; i < 30; i++) gems.push({ x: f.x + rnd(-80, 80), y: f.y + rnd(-60, 60), v: 3, huge: 1, pull: 1 })
     game.later = { t: 1.2, fn: () => { if (game.wave >= 15) finish(true); else nextWave() } } // game time, so pausing or leaving does not move the wave on
     return
@@ -405,7 +406,7 @@ function nextWave() {
   for (const g of gems) g.pull = 1
   game.gold += 5 * game.wave
   game.levelAt[game.wave] = game.level
-  game.wave++; game.waveT = 0; game._next = game.time + 1.5; ebul = []
+  game.wave++; game.waveT = 0; game.forms = 0; game.bossDone = false; game._next = game.time + 1.5; ebul = []
   banner(BOSSES[game.wave] ? `${t('wave')} ${game.wave}` : `${t('wave')} ${game.wave}`)
 }
 
@@ -414,7 +415,8 @@ function weapons(dt) {
   const d = stat.dmg
   if (lvOf('wing')) { timers.wing -= dt * stat.rate; if (timers.wing <= 0) { timers.wing = 0.3; for (const s of [-1, 1]) for (let i = 0; i < lvOf('wing'); i++) shots.push({ x: P.x + s * (34 + i * 10), y: P.y - 6, vx: s * 60 * i, vy: -820, r: 7, dmg: d * 0.6, pierce: stat.pierce, life: 1.3, img: 'p_star_shard', rot: -Math.PI / 2, size: 30, glow: '#fff1a0' }) } }
   if (lvOf('missile')) { timers.missile -= dt; if (timers.missile <= 0) { timers.missile = 1.3 - 0.12 * lvOf('missile'); for (let i = 0; i < lvOf('missile'); i++) shots.push({ x: P.x + (i % 2 ? 20 : -20), y: P.y, vx: (i % 2 ? 1 : -1) * 260, vy: -200, r: 9, dmg: d * 2.2, home: 1, boom: 50, life: 2.2, img: 'p_missile', size: 42, aim: 1, glow: '#ff9a6a' }) } }
-  if (lvOf('orbit')) { const n = 1 + lvOf('orbit'); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n, o = { x: P.x + Math.cos(a) * 80, y: P.y + Math.sin(a) * 80 }; for (const f of foes) if (!f.dead && dist2(o, f) < (f.r + 14) ** 2 && (f.orbT || 0) < game.time) { f.orbT = game.time + 0.25; hurt(f, d * 1.2) } } }
+  if (lvOf('orbit')) { const n = 1 + lvOf('orbit'); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n, o = { x: P.x + Math.cos(a) * 80, y: P.y + Math.sin(a) * 80 }; for (let k = ebul.length - 1; k >= 0; k--) if (dist2(o, ebul[k]) < (18 + ebul[k].r) ** 2) { burst(ebul[k].x, ebul[k].y, 8, false); ebul.splice(k, 1) } // orbs block bullets
+      for (const f of foes) if (!f.dead && dist2(o, f) < (f.r + 14) ** 2 && (f.orbT || 0) < game.time) { f.orbT = game.time + 0.25; hurt(f, d * 1.2) } } }
   if (lvOf('lightning')) { timers.lightning -= dt; if (timers.lightning <= 0) { timers.lightning = 1.6 - 0.15 * lvOf('lightning'); let from = P, hit = new Set(); for (let j = 0; j < 2 + lvOf('lightning'); j++) { const f = nearest(from, 320, hit); if (!f) break; bolts.push({ a: { x: from.x, y: from.y }, b: { x: f.x, y: f.y }, t: 0 }); hit.add(f); hurt(f, d * 2.4); from = f } } }
   if (lvOf('drone')) { timers.drone -= dt * stat.rate; if (timers.drone <= 0) { timers.drone = 0.4; for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1, dx = P.x + s * (70 + Math.floor(i / 2) * 26), dy = P.y + 40; shots.push({ x: dx, y: dy, vx: 0, vy: -800, r: 8, dmg: d * 0.9, pierce: 0, life: 1.3, img: 'p_shuriken', spin: 18, size: 30, glow: '#bfe8ff' }) } } }
   if (lvOf('bomb')) { timers.bomb -= dt; if (timers.bomb <= 0) { timers.bomb = 14 - 1.6 * lvOf('bomb'); fx.push({ k: 'bomb', x: P.x, y: P.y - 200, R: 520, t: 0, d: 0.6 }); ebul = []; game.shake = 12; audio.play('big'); for (const f of [...foes]) hurt(f, d * 6 * (f.kind === 'boss' ? 0.5 : 1)) } }
@@ -484,8 +486,7 @@ function draw() {
     X.save(); X.fillStyle = 'rgba(20,10,40,0.25)'; X.beginPath(); X.ellipse(f.x + 10, f.y + f.r * 0.9, f.r * 0.8, f.r * 0.3, 0, 0, 7); X.fill(); X.restore()
     sprite(img, f.x, f.y, size, 0, 1)
     if (f.hitT > 0) { X.save(); X.globalCompositeOperation = 'lighter'; sprite(img, f.x, f.y, size, 0, 0.5); X.restore() }
-    if (f.slow > 0) { X.strokeStyle = 'rgba(160,220,255,0.8)'; X.lineWidth = 3; X.beginPath(); X.arc(f.x, f.y, f.r + 4, 0, 7); X.stroke() }
-    if (f.dash > 0) { X.strokeStyle = 'rgba(255,80,90,0.8)'; X.lineWidth = 4; X.beginPath(); X.arc(f.x, f.y, f.r + 6 + Math.sin(f.t * 30) * 3, 0, 7); X.stroke() }
+    if (f.dash > 0 && Math.floor(f.t * 12) % 2) { X.save(); X.globalCompositeOperation = 'lighter'; sprite(img, f.x, f.y, size, 0, 0.6); X.restore() } // about to charge: the foe itself blinks
     if (f.kind === 'boss') { const w = 300, x0 = W / 2 - 20 - w / 2; X.fillStyle = '#2a1d55'; X.fillRect(x0 - 3, 84, w + 6, 20); X.fillStyle = '#ff5a6a'; X.fillRect(x0, 87, w * Math.max(0, f.hp / f.max), 14) }
   }
   // player shots: an additive halo first, then the sprite with normal blending ('lighter' sprites turn white on the snow)
@@ -593,7 +594,7 @@ function texts() {
   document.documentElement.lang = lang; FONT = fontFor(lang); document.body.style.fontFamily = FONT
   $('tTitle').textContent = t('title'); $('playBtn').textContent = t('play')
   $('againBtn').textContent = t('again'); $('homeBtn').textContent = t('home'); $('contBtn').textContent = t('cont')
-  $('pTitle').textContent = t('paused'); $('resumeBtn').textContent = t('resume'); $('pHomeBtn').textContent = t('home')
+  $('pTitle').textContent = t('paused'); $('resumeBtn').textContent = t('resume'); $('pHomeBtn').textContent = t('quit')
   $('sTitle').textContent = t('settings'); $('sClose').textContent = t('close'); $('shopTx').textContent = t('upgrades'); $('oGoldL').textContent = t('gold')
   heroList()
 }
@@ -665,7 +666,7 @@ function finish(won) {
   setTimeout(() => platform.banner(true), 600)
   setTimeout(() => show('over'), 600)
   if (BOT && Q.has('loop')) setTimeout(() => { if (game.state === 'over') startRun() }, 4000) // soak test: keep playing
-  window.__runs = (window.__runs || []).concat([{ hero: P.hero, wave: reached, level: game.level, kills: game.kills, score: game.score, won, gold: earned, time: Math.round(game.time), levelAt: game.levelAt, hitAt: game.hitAt, bossT: game.bossT, cards: { ...up } }])
+  window.__runs = (window.__runs || []).concat([{ hero: P.hero, wave: reached, level: game.level, kills: game.kills, score: game.score, won, bosses: game.bossN, gold: earned, time: Math.round(game.time), levelAt: game.levelAt, hitAt: game.hitAt, bossT: game.bossT, cards: { ...up } }])
 }
 function togglePause() {
   if (game.state === 'run') { game.state = 'paused'; show('pause') } else if (game.state === 'paused') { hide('pause'); game.state = 'run' }
@@ -674,7 +675,7 @@ function goHome() { hide('shop'); game.state = 'title'; foes = []; shots = []; e
 $('playBtn').onclick = () => { audio.play('click'); startRun() }
 $('againBtn').onclick = () => platform.interstitial(startRun)
 $('homeBtn').onclick = () => platform.interstitial(goHome)
-$('pHomeBtn').onclick = () => { hide('pause'); goHome() }
+$('pHomeBtn').onclick = () => { hide('pause'); game.state = 'run'; finish(false) } // ends the run: result screen, the gold earned so far is kept
 $('resumeBtn').onclick = togglePause
 $('pauseBtn').onclick = togglePause
 $('setBtn').onclick = () => settingsPanel()
