@@ -102,3 +102,14 @@ button{min-height:48px}
 #superBtn b{position:absolute;right:-4px;top:-4px;min-width:30px;height:30px;border-radius:15px;background:#ff4d5e;color:#fff;border:3px solid #2a1d55;font-size:18px;line-height:24px;box-sizing:border-box}
 #superBtn.empty{filter:grayscale(1) brightness(.7)}
 #superBtn.empty b{background:#777}
+
+.card.r{border-color:#2f6fd6;box-shadow:0 6px 0 #2f6fd6;background:linear-gradient(#f2f7ff,#dceaff)}
+.card.r i{background:#cfe2ff;color:#1d4aa0}
+.card.l{border-color:#c98a00;box-shadow:0 6px 0 #c98a00,0 0 26px #ffd34d;background:linear-gradient(#fffbe6,#ffe9a8);animation:pop .35s ease-out backwards,legend 1s ease-in-out infinite alternate}
+.card.l i{background:#ffd34d;color:#5a3a00}
+@keyframes legend{to{box-shadow:0 6px 0 #c98a00,0 0 44px #ffd34d}}
+#skyRow{display:flex;align-items:center;gap:10px;font-size:24px;font-weight:900;color:#fff;-webkit-text-stroke:5px #2a1d55;paint-order:stroke fill}
+#skyRow button{min-width:56px;width:56px;padding:0;-webkit-text-stroke:0}
+#skyRow button:disabled{opacity:.35}
+#oSky{font-size:24px;font-weight:900;color:#ffd34d;-webkit-text-stroke:5px #2a1d55;paint-order:stroke fill;min-height:0}
+#oSky:empty{display:none}

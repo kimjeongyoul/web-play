@@ -18,7 +18,7 @@ const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
 
 // ---------------------------------------------------------------- save + text
 const SAVE_KEY = 'skyheroes.v1'
-const SAVE0 = () => ({ hero: 'fire_mage', best: 0, bestWave: {}, music: 0.6, sfx: 0.8, shake: true, nums: true, lang: '', gold: 0, meta: {}, owned: ['fire_mage'] })
+const SAVE0 = () => ({ sky: 1, skyMax: 1, hero: 'fire_mage', best: 0, bestWave: {}, music: 0.6, sfx: 0.8, shake: true, nums: true, lang: '', gold: 0, meta: {}, owned: ['fire_mage'] })
 const save = SAVE0()
 let storeTimer = 0
 function store() { // Playgama allows its own storage only (PLAYGAMA.md 3.2.1); a burst of changes is written once
@@ -61,6 +61,14 @@ const CARDS = [
   { id: 'drone' }, { id: 'bomb' },
 ]
 const MAXLV = 5
+// rare cards only the hero can draw (max Lv 3), and legend evolutions: card a at Lv 5 + card b taken -> one pick that changes the weapon (BALANCE.md 2)
+const HERO_CARDS = { fire_mage: ['meteor', 'blaze'], frost_hunter: ['shatter', 'icicle'], necromancer: ['skulls', 'harvest'], gambler: ['jackpot', 'double'], smith: ['anvil', 'shrapnel'], knight: ['guard', 'holy'] }
+for (const [h, ids] of Object.entries(HERO_CARDS)) for (const id of ids) CARDS.push({ id, hero: h, rar: 'r', max: 3 })
+const EVOS = [{ id: 'storm', a: 'missile', b: 'power' }, { id: 'blizzard', a: 'lightning', b: 'frost' }, { id: 'sawring', a: 'orbit', b: 'pierce' }, { id: 'gatling', a: 'wing', b: 'rapid' }, { id: 'squad', a: 'drone', b: 'crit' }, { id: 'inferno', a: 'nova', b: 'bomb' }]
+for (const e of EVOS) CARDS.push({ id: e.id, evo: e, rar: 'l', max: 1 })
+const cardMax = (c) => c.max || MAXLV
+// sky stages: clearing sky N opens N+1, foes x2 health each, gold +50% each
+const skyHp = () => 2 ** (game.sky - 1), skyGold = () => 1 + 0.5 * (game.sky - 1)
 // between runs: gold buys lasting upgrades and opens heroes (BALANCE.md 6)
 const META = [
   { id: 'power', icon: 'c_power', base: 90, grow: 1.7, max: 10, per: 6 }, // damage +6% a level
@@ -168,7 +176,7 @@ const platform = {
 let runs = 0
 
 // ---------------------------------------------------------------- run state
-const game = { state: 'title', time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: 6, shake: 0, flash: 0, bossOn: false, cont: false, scroll: 0, banner: null }
+const game = { sky: 1, state: 'title', time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: 6, shake: 0, flash: 0, bossOn: false, cont: false, scroll: 0, banner: null }
 const P = { x: W / 2, y: H * 0.8, r: 18, lives: 3, inv: 0, hero: save.hero, fire: 0 }
 let foes = [], shots = [], ebul = [], gems = [], fx = [], nums = [], decos = [], bolts = []
 let up = {} // card levels
@@ -181,8 +189,8 @@ const stat = {
   get magnet() { return 140 * (1 + 0.5 * lvOf('magnet')) * (1 + 0.12 * mLv('magnet')) },
 }
 function resetRun() {
-  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], gold: 0 })
-  Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0, supers: 1 })
+  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, sky: SIM ? +Q.get('sky') || 1 : Math.min(save.sky || 1, save.skyMax || 1), forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], gold: 0 })
+  Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0, supers: 1, guard: 0, guardT: 0 })
   foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; up = { main: 1 }
   timers = { missile: 0, lightning: 0, bomb: 6, drone: 0, wing: 0 }
   spawnQ = []; banner(`${t('wave')} 1`)
@@ -195,12 +203,12 @@ function fireMain() {
   const L = lvOf('main'), d = stat.dmg, h = P.hero, x = P.x, y = P.y - 30
   const s = (o) => shots.push(Object.assign({ x, y, vx: 0, vy: -900, r: 9, dmg: d, pierce: stat.pierce, life: 1.4, img: 'p_fireball', rot: -Math.PI / 2, size: 30 }, o))
   if (h === 'fire_mage') { // a fast stream, more streams side by side
-    for (let i = 0; i < L; i++) { const off = (i - (L - 1) / 2) * 16; s({ x: x + off, vy: -1050, dmg: d * 0.92, size: 46, glow: '#ff8a3a' }) }
+    for (let i = 0; i < L; i++) { const off = (i - (L - 1) / 2) * 16; s({ x: x + off, vy: -1050, dmg: d * 0.92, size: 46, glow: '#ff8a3a', boom: lvOf('blaze') ? 30 + 12 * lvOf('blaze') : 0 }) }
     return 0.07
   }
   if (h === 'frost_hunter') { // a fan of arrows that slow
     const n = 3 + L * 2
-    for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.1 * (1 - 0.1 * (L - 1)); s({ vx: Math.cos(a) * 980, vy: Math.sin(a) * 980, img: 'p_crossbow_bolt', rot: a, dmg: d * 0.55 * (1 + 0.15 * (L - 1)), chill: 1, size: 50, glow: '#7fd4ff' }) }
+    for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.1 * (1 - 0.1 * (L - 1)); s({ vx: Math.cos(a) * 980, vy: Math.sin(a) * 980, img: 'p_crossbow_bolt', rot: a, dmg: d * 0.55 * (1 + 0.15 * (L - 1)), chill: 1, size: 50, glow: '#7fd4ff', split: lvOf('icicle') }) }
     return 0.22
   }
   if (h === 'necromancer') { // soul orbs leave from around the hero and chase foes
@@ -208,19 +216,19 @@ function fireMain() {
     for (let i = 0; i < n; i++) { const a = game.time * 3 + i * Math.PI * 2 / n, ox = Math.cos(a) * 46, oy = Math.sin(a) * 30; s({ x: x + ox, y: y + 20 + oy, vy: -700, img: 'p_orbit_orb', home: 1, dmg: d * 1.2, size: 38, glow: '#c07aff' }) }
     return 0.18
   }
-  if (h === 'gambler') { // coins bounce from foe to foe
-    const n = 1 + Math.ceil(L / 2)
+  if (h === 'gambler') { // coins bounce from foe to foe; 'double' sometimes throws the handful twice
+    const n = (1 + Math.ceil(L / 2)) * (Math.random() < 0.15 * lvOf('double') ? 2 : 1)
     for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.12; s({ vx: Math.cos(a) * 820, vy: Math.sin(a) * 820, coin: 1, bounce: 2 + L, dmg: d * 0.7, lucky: 0.3, r: 15, life: 2, glow: '#ffd34d' }) }
     return 0.22
   }
   if (h === 'smith') { // heavy hammers that blow up
     const n = Math.ceil(L / 2) + 1
-    for (let i = 0; i < n; i++) { const off = (i - (n - 1) / 2) * 40; s({ x: x + off, vy: -680, img: 'p_hammer', spin: 14, dmg: d * 1.8, boom: 80 + L * 12, size: 58, r: 18, glow: '#ffb35a' }) }
+    for (let i = 0; i < n; i++) { const off = (i - (n - 1) / 2) * 40; s({ x: x + off, vy: -680, img: 'p_hammer', spin: 14, dmg: d * 1.8, boom: 80 + L * 12, size: 58, r: 18, glow: '#ffb35a', shrap: lvOf('shrapnel') }) }
     return 0.4
   }
   // knight: wide shield waves that go through everything
   const n = Math.min(3, Math.ceil(L / 2))
-  for (let i = 0; i < n; i++) s({ x: x + (i - (n - 1) / 2) * 70, vy: -760, wave: 1, w: 130 + L * 20, r: 26, dmg: d * 2.2, pierce: 99, life: 1.2 })
+  for (let i = 0; i < n; i++) s({ x: x + (i - (n - 1) / 2) * 70, vy: -760, wave: 1, w: (130 + L * 20) * (1 + 0.2 * lvOf('holy')), push: lvOf('holy'), r: 26, dmg: d * 2.2, pierce: 99, life: 1.2 })
   return 0.3
 }
 
@@ -251,11 +259,11 @@ function formation(w) {
   return kind
 }
 function spawn(kind, x, y, extra = {}) {
-  const k = KINDS[kind], hp = k.hp * hpScale(game.wave)
+  const k = KINDS[kind], hp = k.hp * hpScale(game.wave) * skyHp()
   foes.push(Object.assign({ kind, x, y, vx: 0, vy: k.sp, hp, max: hp, r: k.r, t: 0, shoot: k.shoot ? rnd(0.6, k.shoot) : 0, slow: 0, hitT: 0, ph: rnd(0, 6) }, extra))
 }
 function spawnBoss() {
-  const B = BOSSES[game.wave], hp = B.hp * hpScale(game.wave) / hpScale(game.wave >= 10 ? 10 : 5) * (game.wave === 15 ? 1.1 : 1)
+  const B = BOSSES[game.wave], hp = B.hp * hpScale(game.wave) / hpScale(game.wave >= 10 ? 10 : 5) * (game.wave === 15 ? 1.1 : 1) * skyHp()
   foes.push({ kind: 'boss', boss: game.wave, img: B.img, x: W / 2, y: -120, vx: 0, vy: 90, hp, max: hp, r: B.r, t: 0, shoot: 1.5, slow: 0, hitT: 0, ph: 0 })
   game.bossOn = true; game.bossN = (game.bossN || 0) + 1; game.bossFrom = game.time; banner(t('boss'), '#ff5a6a'); audio.play('boss')
 }
@@ -293,12 +301,15 @@ function tick(dt) {
     if (s.home) { const f = nearest(s, 600); if (f) { const a = Math.atan2(f.y - s.y, f.x - s.x), sp = 720; s.vx += (Math.cos(a) * sp - s.vx) * Math.min(1, dt * 6); s.vy += (Math.sin(a) * sp - s.vy) * Math.min(1, dt * 6) } }
     s.x += s.vx * dt; s.y += s.vy * dt
     if (s.coin && (s.x < 10 || s.x > W - 10)) { s.vx = -s.vx; s.x = clamp(s.x, 10, W - 10) }
-    if (s.life <= 0 || s.y < -60 || s.y > H + 60 || s.x < -60 || s.x > W + 60) { shots.splice(i, 1); continue }
+    if (s.life <= 0 || (s.y < -60 && !s.down) || s.y > H + 60 || s.x < -60 || s.x > W + 60) { shots.splice(i, 1); continue }
     for (const f of foes) {
       if (f.dead || (s.hitSet && s.hitSet.has(f))) continue
       const rr = (s.wave ? s.w * 0.5 : s.r) + f.r
       if ((s.wave ? Math.abs(s.x - f.x) < rr && Math.abs(s.y - f.y) < f.r + 14 : dist2(s, f) < rr * rr)) {
         hurt(f, s.dmg, s); (s.hitSet ||= new Set()).add(f)
+        if (s.push && f.kind !== 'boss') f.y -= 18 * s.push
+        if (s.split && !s.child && Math.random() < 0.3 * s.split) for (const sx of [-1, 1]) shots.push({ x: s.x, y: s.y, vx: sx * 600, vy: -600, r: 8, dmg: s.dmg * 0.6, life: 0.6, img: 'p_crossbow_bolt', rot: Math.atan2(-600, sx * 600), size: 36, glow: '#7fd4ff', child: 1, chill: 1, hitSet: new Set([f]) })
+        if (s.shrap) for (let q = 0; q < 4 + s.shrap; q++) { const qa = q / (4 + s.shrap) * Math.PI * 2; shots.push({ x: s.x, y: s.y, vx: Math.cos(qa) * 520, vy: Math.sin(qa) * 520, r: 8, dmg: s.dmg * 0.35, life: 0.45, img: 'p_star_shard', size: 26, glow: '#ffb35a', hitSet: new Set([f]) }) }
         if (s.boom) { explode(s.x, s.y, s.boom, s.dmg * 0.8); s.life = 0; break }
         if (s.coin && s.bounce > 0) { s.bounce--; const n = nearest(s, 400, s.hitSet); if (n) { const a = Math.atan2(n.y - s.y, n.x - s.x); s.vx = Math.cos(a) * 820; s.vy = Math.sin(a) * 820; s.life = 1.2 } else s.life = 0; break }
         if (s.pierce > 0) { s.pierce--; continue }
@@ -342,7 +353,7 @@ function tick(dt) {
 }
 function nearest(p, range, skip) { let best = null, bd = range * range; for (const f of foes) { if (f.dead || (skip && skip.has(f))) continue; const d = dist2(p, f); if (d < bd) { bd = d; best = f } } return best }
 function enemyFire(f, k) {
-  const a = Math.atan2(P.y - f.y, P.x - f.x), sp = 230 + game.wave * 6
+  const a = Math.atan2(P.y - f.y, P.x - f.x), sp = (230 + game.wave * 6) * (1 + 0.05 * (game.sky - 1))
   if (k.ring) { for (let i = 0; i < 10; i++) { const b = i / 10 * Math.PI * 2; ebul.push({ x: f.x, y: f.y, vx: Math.cos(b) * sp * 0.8, vy: Math.sin(b) * sp * 0.8, r: 8 }) } return }
   const n = f.kind === 'shooter' ? 3 : 1
   for (let i = 0; i < n; i++) { const b = a + (i - (n - 1) / 2) * 0.22; ebul.push({ x: f.x, y: f.y + f.r * 0.5, vx: Math.cos(b) * sp, vy: Math.sin(b) * sp, r: 8 }) }
@@ -359,10 +370,12 @@ function bossAI(f, dt) {
   }
 }
 function hurt(f, dmg, src) {
-  let d = dmg, crit = Math.random() < stat.crit + (src?.lucky || 0) // gambler coins: 30% lucky hits of their own
-  if (crit) d *= 2.5
+  let d = dmg, crit = Math.random() < stat.crit + (src?.lucky || 0) + 0.05 * lvOf('jackpot') // gambler coins: 30% lucky hits of their own
+  if (crit) { d *= 2.5; if (lvOf('jackpot') && Math.random() < 0.1) game.gold += 1 }
+  if (f.slow > 0 && lvOf('shatter')) d *= 1 + 0.25 * lvOf('shatter')
   f.hp -= d; f.hitT = 0.08; game.dealt += Math.min(d, Math.max(0, f.hp + d))
-  if (src?.chill || lvOf('frost')) f.slow = 0.6 + 0.3 * lvOf('frost')
+  if (src?.chill || lvOf('frost')) f.slow = Math.max(f.slow, 0.6 + 0.3 * lvOf('frost'))
+  if (src?.freeze) f.slow = Math.max(f.slow, 3)
   if (save.nums && nums.length < 60) nums.push({ x: f.x + rnd(-10, 10), y: f.y - f.r * 0.5, v: Math.round(d * 10), t: 0, crit })
   audio.play('hit')
   if (f.hp <= 0 && !f.dead) kill(f)
@@ -378,9 +391,11 @@ function kill(f) {
     return
   }
   const k = KINDS[f.kind]
-  gems.push({ x: f.x, y: f.y, v: k.xp })
+  gems.push({ x: f.x, y: f.y, v: k.xp + lvOf('harvest') })
+  if (lvOf('skulls') && Math.random() < 0.15 * lvOf('skulls')) shots.push({ x: f.x, y: f.y, vx: rnd(-200, 200), vy: -500, r: 12, dmg: stat.dmg * 3, home: 1, life: 2.5, img: 'p_orbit_orb', size: 40, glow: '#c07aff', pierce: 1 })
   if (k.split) for (const s of [-1, 1]) spawn('mini', f.x + s * 16, f.y, { vy: 120 })
-  if (lvOf('nova') && Math.random() < 0.2 + 0.12 * lvOf('nova')) explode(f.x, f.y, 70 + 12 * lvOf('nova'), 2.5 * stat.dmg)
+  if (lvOf('inferno')) explode(f.x, f.y, 130, 4 * stat.dmg)
+  else if (lvOf('nova') && Math.random() < 0.2 + 0.12 * lvOf('nova')) explode(f.x, f.y, 70 + 12 * lvOf('nova'), 2.5 * stat.dmg)
   audio.play('pop')
 }
 function explode(x, y, R, dmg) {
@@ -409,6 +424,7 @@ function useSuper() {
 function superBtn() { const b = $('superBtn'); b.querySelector('img').src = `assets/s_${P.hero}.webp`; b.querySelector('b').textContent = P.supers; b.classList.toggle('empty', P.supers <= 0) }
 function playerHit() {
   if (P.inv > 0) return
+  if (P.guard) { P.guard = 0; P.inv = 1; ebul = ebul.filter((b) => dist2(b, P) > 160 * 160); burst(P.x, P.y, 40, true); audio.play('warp'); return } // knight's shield takes this one
   P.lives--; game.hitAt.push(game.wave); P.inv = 2; game.shake = 16; game.flash = 0.2; audio.play('hurt')
   ebul = ebul.filter((b) => dist2(b, P) > 220 * 220)
   try { if (save.shake) navigator.vibrate?.(120) } catch {}
@@ -424,29 +440,40 @@ function nextWave() {
 }
 
 // ---------------------------------------------------------------- card-driven extra weapons
+const orbitR = () => (lvOf('sawring') ? 115 : 80)
 function weapons(dt) {
   const d = stat.dmg
-  if (lvOf('wing')) { timers.wing -= dt * stat.rate; if (timers.wing <= 0) { timers.wing = 0.3; for (const s of [-1, 1]) for (let i = 0; i < lvOf('wing'); i++) shots.push({ x: P.x + s * (34 + i * 10), y: P.y - 6, vx: s * 60 * i, vy: -820, r: 7, dmg: d * 0.6, pierce: stat.pierce, life: 1.3, img: 'p_star_shard', rot: -Math.PI / 2, size: 30, glow: '#fff1a0' }) } }
-  if (lvOf('missile')) { timers.missile -= dt; if (timers.missile <= 0) { timers.missile = 1.3 - 0.12 * lvOf('missile'); for (let i = 0; i < lvOf('missile'); i++) shots.push({ x: P.x + (i % 2 ? 20 : -20), y: P.y, vx: (i % 2 ? 1 : -1) * 260, vy: -200, r: 9, dmg: d * 2.2, home: 1, boom: 50, life: 2.2, img: 'p_missile', size: 42, aim: 1, glow: '#ff9a6a' }) } }
-  if (lvOf('orbit')) { const n = 1 + lvOf('orbit'); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n, o = { x: P.x + Math.cos(a) * 80, y: P.y + Math.sin(a) * 80 }; for (let k = ebul.length - 1; k >= 0; k--) if (dist2(o, ebul[k]) < (18 + ebul[k].r) ** 2) { burst(ebul[k].x, ebul[k].y, 8, false); ebul.splice(k, 1) } // orbs block bullets
-      for (const f of foes) if (!f.dead && dist2(o, f) < (f.r + 14) ** 2 && (f.orbT || 0) < game.time) { f.orbT = game.time + 0.25; hurt(f, d * 1.2) } } }
-  if (lvOf('lightning')) { timers.lightning -= dt; if (timers.lightning <= 0) { timers.lightning = 1.6 - 0.15 * lvOf('lightning'); let from = P, hit = new Set(); for (let j = 0; j < 2 + lvOf('lightning'); j++) { const f = nearest(from, j ? 320 : 1400, hit); if (!f) break; bolts.push({ a: { x: from.x, y: from.y }, b: { x: f.x, y: f.y }, t: 0 }); hit.add(f); hurt(f, d * 2.4); from = f } } }
-  if (lvOf('drone')) { timers.drone -= dt * stat.rate; if (timers.drone <= 0) { timers.drone = 0.4; for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1, dx = P.x + s * (70 + Math.floor(i / 2) * 26), dy = P.y + 40; shots.push({ x: dx, y: dy, vx: 0, vy: -800, r: 8, dmg: d * 0.9, pierce: 0, life: 1.3, img: 'p_shuriken', spin: 18, size: 30, glow: '#bfe8ff' }) } } }
+  if (lvOf('meteor')) { timers.meteor = (timers.meteor ?? 1) - dt; if (timers.meteor <= 0) { timers.meteor = 2.6 - 0.4 * lvOf('meteor'); const f = pick(foes.filter((q) => q.y > 0)); if (f) shots.push({ x: f.x + rnd(-30, 30), y: -40, vx: 0, vy: 1300, r: 26, dmg: d * 6, boom: 110, life: 1.5, img: 'p_fireball', rot: Math.PI / 2, size: 90, glow: '#ff8a3a', down: 1 }) } }
+  if (lvOf('anvil')) { timers.anvil = (timers.anvil ?? 1) - dt; if (timers.anvil <= 0) { timers.anvil = 4 - 0.6 * lvOf('anvil'); const f = foes.filter((q) => q.y > 0).sort((a, b) => b.hp - a.hp)[0]; if (f) shots.push({ x: f.x, y: -60, vx: 0, vy: 1400, r: 30, dmg: d * 12, boom: 90, life: 1.5, img: 'p_hammer', size: 96, glow: '#ffb35a', spin: 6, down: 1 }) } }
+  if (lvOf('guard') && P.guard < 1) { P.guardT = (P.guardT ?? 0) + dt; if (P.guardT >= 12 - 2 * lvOf('guard')) { P.guard = 1; P.guardT = 0 } }
+  if (lvOf('wing')) { timers.wing -= dt * stat.rate; if (timers.wing <= 0) { timers.wing = lvOf('gatling') ? 0.09 : 0.3; for (const s of [-1, 1]) for (let i = 0; i < lvOf('wing'); i++) shots.push({ x: P.x + s * (34 + i * 10), y: P.y - 6, vx: s * 60 * i, vy: -820, r: 7, dmg: d * 0.6, pierce: stat.pierce, life: 1.3, img: 'p_star_shard', rot: -Math.PI / 2, size: 30, glow: '#fff1a0' }) } }
+  if (lvOf('missile')) { timers.missile -= dt; if (timers.missile <= 0) { timers.missile = 1.3 - 0.12 * lvOf('missile'); for (let i = 0; i < lvOf('missile') * (lvOf('storm') ? 3 : 1); i++) shots.push({ x: P.x + (i % 2 ? 20 : -20), y: P.y, vx: (i % 2 ? 1 : -1) * rnd(160, 360), vy: -200, r: 9, dmg: d * 2.2, home: 1, boom: lvOf('storm') ? 90 : 50, life: 2.2, img: 'p_missile', size: 42, aim: 1, glow: '#ff9a6a' }) } }
+  if (lvOf('orbit')) { const n = lvOf('sawring') ? 8 : 1 + lvOf('orbit'), R = orbitR(); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n, o = { x: P.x + Math.cos(a) * R, y: P.y + Math.sin(a) * R }; for (let k = ebul.length - 1; k >= 0; k--) if (dist2(o, ebul[k]) < (18 + ebul[k].r) ** 2) { burst(ebul[k].x, ebul[k].y, 8, false); ebul.splice(k, 1) } // orbs block bullets
+      for (const f of foes) if (!f.dead && dist2(o, f) < (f.r + 14) ** 2 && (f.orbT || 0) < game.time) { f.orbT = game.time + 0.25; hurt(f, d * (lvOf('sawring') ? 3 : 1.2)) } } }
+  if (lvOf('lightning')) { timers.lightning -= dt; if (timers.lightning <= 0) { timers.lightning = 1.6 - 0.15 * lvOf('lightning'); let from = P, hit = new Set(); for (let j = 0; j < 2 + lvOf('lightning') + (lvOf('blizzard') ? 4 : 0); j++) { const f = nearest(from, j ? 320 : 1400, hit); if (!f) break; bolts.push({ a: { x: from.x, y: from.y }, b: { x: f.x, y: f.y }, t: 0, ice: lvOf('blizzard') }); hit.add(f); hurt(f, d * 2.4 * (lvOf('blizzard') ? 2 : 1), lvOf('blizzard') ? { freeze: 1 } : null); from = f } } }
+  if (lvOf('drone')) { timers.drone -= dt * stat.rate; if (timers.drone <= 0) { timers.drone = 0.4; for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1, dx = P.x + s * (70 + Math.floor(i / 2) * 26), dy = P.y + 40; shots.push(lvOf('squad') ? { x: dx, y: dy, vx: 0, vy: -700, r: 9, dmg: d * 2, home: 1, life: 1.8, img: 'p_missile', size: 34, aim: 1, glow: '#ff9a6a' } : { x: dx, y: dy, vx: 0, vy: -800, r: 8, dmg: d * 0.9, pierce: 0, life: 1.3, img: 'p_shuriken', spin: 18, size: 30, glow: '#bfe8ff' }) } } }
   if (lvOf('bomb')) { timers.bomb -= dt; if (timers.bomb <= 0) { timers.bomb = 14 - 1.6 * lvOf('bomb'); fx.push({ k: 'bomb', x: P.x, y: P.y - 200, R: 520, t: 0, d: 0.6 }); ebul = []; game.shake = 12; audio.play('big'); for (const f of [...foes]) hurt(f, d * 6 * (f.kind === 'boss' ? 0.5 : 1)) } }
 }
 
 // ---------------------------------------------------------------- cards
+function cardPool() {
+  const ok = (c) => lvOf(c.id) < cardMax(c) && (!c.hero || c.hero === P.hero) && (!c.evo || (lvOf(c.evo.a) >= MAXLV && lvOf(c.evo.b) > 0))
+  const avail = CARDS.filter(ok), evo = avail.filter((c) => c.evo), rest = avail.filter((c) => !c.evo), pool = evo.slice(0, 1)
+  const w = (c) => (c.rar === 'r' ? 0.8 : 1) * (lvOf(c.id) ? 1.4 : 1) // cards you already have come a bit more often
+  while (pool.length < 3 && rest.length) { let x = Math.random() * rest.reduce((a, c) => a + w(c), 0), i = 0; while ((x -= w(rest[i])) > 0) i++; pool.push(rest.splice(i, 1)[0]) }
+  return pool
+}
 function openCards(auto = BOT) {
   game.state = 'cards'; audio.play('level')
-  const avail = CARDS.filter((c) => lvOf(c.id) < MAXLV)
-  const pool = [...avail].sort(() => Math.random() - 0.5).slice(0, 3)
+  const pool = cardPool()
+  if (!pool.length) { game.state = 'run'; game.gold += 20; return } // everything is maxed: a little gold instead
   const row = $('cardRow'); row.innerHTML = ''
   $('cTitle').textContent = t('levelUp'); $('cSub').textContent = t('pick')
   for (const c of pool) {
-    const el = document.createElement('div'); el.className = 'card'
-    const L = lvOf(c.id)
-    el.innerHTML = `<div class="ic"><img src="assets/c_${c.id}.webp"></div><div class="tx"><b>${t('c_' + c.id)}</b><span>${t('c_' + c.id + '_d')}</span><i>${L ? t('lv') + ' ' + L + ' → ' + (L + 1) : t('newCard')}</i></div>`
-    el.onclick = () => { up[c.id] = L + 1; audio.play('click'); hide('cards'); game.state = 'run'; P.inv = Math.max(P.inv, 0.6) }
+    const el = document.createElement('div'); el.className = 'card' + (c.rar ? ' ' + c.rar : '')
+    const L = lvOf(c.id), tag = c.evo ? t('rar_l') : c.rar === 'r' ? t('rar_r') + (L ? ' ' + t('lv') + ' ' + L + ' → ' + (L + 1) : '') : L ? t('lv') + ' ' + L + ' → ' + (L + 1) : t('newCard')
+    el.innerHTML = `<div class="ic"><img src="assets/c_${c.id}.webp"></div><div class="tx"><b>${t('c_' + c.id)}</b><span>${t('c_' + c.id + '_d')}</span><i>${tag}</i></div>`
+    el.onclick = () => { up[c.id] = L + 1; audio.play(c.evo ? 'win' : 'click'); hide('cards'); game.state = 'run'; P.inv = Math.max(P.inv, 0.6); if (c.evo) { banner(t('c_' + c.id), '#ffd34d'); game.shake = 8 } }
     row.appendChild(el)
   }
   show('cards')
@@ -508,18 +535,19 @@ function draw() {
   X.restore(); X.save()
   for (const s of shots) {
     if (s.wave) { X.lineCap = 'round'; X.strokeStyle = '#2a1d55'; X.lineWidth = 18; X.beginPath(); X.ellipse(s.x, s.y + 6, s.w * 0.5, 20, 0, Math.PI * 1.08, Math.PI * 1.92); X.stroke(); X.strokeStyle = '#8fd0ff'; X.lineWidth = 12; X.stroke(); X.strokeStyle = '#fff'; X.lineWidth = 4; X.stroke(); continue }
-    if (s.coin) { const cw = s.r * Math.abs(Math.cos(game.time * 14 + s.x * 0.05)) + 4; X.fillStyle = '#2a1d55'; X.beginPath(); X.ellipse(s.x, s.y, cw + 3, s.r + 3, 0, 0, 7); X.fill(); X.fillStyle = '#ffd34d'; X.beginPath(); X.ellipse(s.x, s.y, cw, s.r, 0, 0, 7); X.fill(); X.fillStyle = '#fff3b0'; X.beginPath(); X.ellipse(s.x - cw * 0.3, s.y - s.r * 0.3, cw * 0.3, s.r * 0.3, 0, 0, 7); X.fill(); continue }
+    if (s.coin) { const im = IMG.c_coin, k = Math.abs(Math.cos(game.time * 14 + s.x * 0.05)) * 0.8 + 0.2, z = (s.r * 2.6) / im.width; X.save(); X.translate(s.x, s.y); X.scale(z * k, z); X.drawImage(im, -im.width / 2, -im.height / 2); X.restore(); continue } // the gold coin picture, spinning
     const rot = s.aim ? Math.atan2(s.vy, s.vx) : s.spin ? game.time * s.spin : (s.rot ?? 0)
     sprite(s.img, s.x, s.y, s.size, rot)
   }
   X.restore()
   // orbit orbs
-  if (lvOf('orbit')) { const n = 1 + lvOf('orbit'); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n; sprite('p_orbit_orb', P.x + Math.cos(a) * 80, P.y + Math.sin(a) * 80, 34) } }
+  if (lvOf('orbit')) { const n = lvOf('sawring') ? 8 : 1 + lvOf('orbit'), R = orbitR(); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n; sprite(lvOf('sawring') ? 'p_shuriken' : 'p_orbit_orb', P.x + Math.cos(a) * R, P.y + Math.sin(a) * R, lvOf('sawring') ? 46 : 34, lvOf('sawring') ? game.time * 12 : 0) } }
   // drones
   for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1; sprite('p_shuriken', P.x + s * (70 + Math.floor(i / 2) * 26), P.y + 40, 26, game.time * 10) }
   // player
   if (game.state !== 'title' && P.lives > 0 && !(P.inv > 0 && Math.floor(P.inv * 12) % 2 === 0)) {
     X.fillStyle = 'rgba(20,10,40,0.25)'; X.beginPath(); X.ellipse(P.x + 14, P.y + 56, 34, 11, 0, 0, 7); X.fill()
+    if (P.guard) { X.save(); X.globalCompositeOperation = 'lighter'; glow('#8fd0ff', P.x, P.y, 90); X.restore() }
     sprite('hero_' + P.hero, P.x, P.y, 124, Math.sin(game.time * 3) * 0.04)
   }
   // enemy bullets
@@ -527,7 +555,7 @@ function draw() {
   for (const b of ebul) sprite(b.boss ? 'ebullet_boss' : 'ebullet_round', b.x, b.y, (b.r + 4) * 2.3) // the picture's rim is the hit size, a little glow outside
   // bolts, fx
   X.save(); X.globalCompositeOperation = 'lighter'
-  for (const bo of bolts) { X.strokeStyle = `rgba(200,230,255,${1 - bo.t / 0.18})`; X.lineWidth = 4; X.beginPath(); X.moveTo(bo.a.x, bo.a.y); const mx = (bo.a.x + bo.b.x) / 2 + rnd(-20, 20), my = (bo.a.y + bo.b.y) / 2 + rnd(-20, 20); X.lineTo(mx, my); X.lineTo(bo.b.x, bo.b.y); X.stroke() }
+  for (const bo of bolts) { X.strokeStyle = bo.ice ? `rgba(150,220,255,${1 - bo.t / 0.18})` : `rgba(200,230,255,${1 - bo.t / 0.18})`; X.lineWidth = 4; X.beginPath(); X.moveTo(bo.a.x, bo.a.y); const mx = (bo.a.x + bo.b.x) / 2 + rnd(-20, 20), my = (bo.a.y + bo.b.y) / 2 + rnd(-20, 20); X.lineTo(mx, my); X.lineTo(bo.b.x, bo.b.y); X.stroke() }
   for (const e of fx) {
     const u = e.t / e.d
     if (e.k === 'ring') { X.strokeStyle = `rgba(255,190,90,${1 - u})`; X.lineWidth = 10 * (1 - u) + 2; X.beginPath(); X.arc(e.x, e.y, e.R * (0.3 + u * 0.7), 0, 7); X.stroke() }
@@ -627,7 +655,13 @@ function heroList() {
   }
   $('heroInfo').textContent = t('w_' + save.hero)
   $('goldN').textContent = save.gold.toLocaleString('en-US')
+  skyRow()
   $('shopBtn').classList.toggle('dot', META.some((m) => mLv(m.id) < m.max && save.gold >= metaCost(m)) || HEROES.some((h) => !save.owned.includes(h) && save.gold >= HERO_COST[h]))
+}
+function skyRow() {
+  const max = save.skyMax || 1; save.sky = clamp(save.sky || 1, 1, max)
+  $('skyRow').classList.toggle('hide', max < 2)
+  $('skyName').textContent = t('sky').replace('#', save.sky); $('skyPrev').disabled = save.sky <= 1; $('skyNext').disabled = save.sky >= max
 }
 function shopPanel() {
   const rows = $('uRows'); rows.innerHTML = ''
@@ -667,7 +701,9 @@ function finish(won) {
   game.state = 'over'; runs++; hide('pauseBtn'); hide('superBtn'); platform.msg('gameplay_stopped')
   const reached = won ? 15 : game.wave
   if (won) game.gold += 200
-  const earned = Math.round(game.gold * (1 + 0.1 * mLv('greed'))); save.gold += earned
+  const opened = !SIM && won && game.sky >= (save.skyMax || 1); if (opened) { save.skyMax = game.sky + 1; save.sky = game.sky + 1 }
+  $('oSky').textContent = opened ? t('skyOpen').replace('#', game.sky + 1) : ''
+  const earned = Math.round(game.gold * (1 + 0.1 * mLv('greed')) * skyGold()); save.gold += earned
   $('oGold').textContent = '+' + earned.toLocaleString('en-US')
   save.best = Math.max(save.best, game.score); save.bestWave[P.hero] = Math.max(save.bestWave[P.hero] || 0, reached); store()
   $('oTitle').textContent = won ? t('cleared') : t('over')
@@ -680,7 +716,7 @@ function finish(won) {
   setTimeout(() => platform.banner(true), 600)
   setTimeout(() => show('over'), 600)
   if (BOT && Q.has('loop')) setTimeout(() => { if (game.state === 'over') startRun() }, 4000) // soak test: keep playing
-  window.__runs = (window.__runs || []).concat([{ hero: P.hero, wave: reached, level: game.level, kills: game.kills, score: game.score, won, bosses: game.bossN, gold: earned, time: Math.round(game.time), levelAt: game.levelAt, hitAt: game.hitAt, bossT: game.bossT, cards: { ...up } }])
+  window.__runs = (window.__runs || []).concat([{ hero: P.hero, wave: reached, level: game.level, kills: game.kills, score: game.score, won, sky: game.sky, bosses: game.bossN, gold: earned, time: Math.round(game.time), levelAt: game.levelAt, hitAt: game.hitAt, bossT: game.bossT, cards: { ...up } }])
 }
 function togglePause() {
   if (game.state === 'run') { game.state = 'paused'; show('pause') } else if (game.state === 'paused') { hide('pause'); game.state = 'run' }
@@ -697,6 +733,8 @@ addEventListener('contextmenu', (e) => e.preventDefault())
 C.addEventListener('pointerdown', (e) => { if (e.button === 2) useSuper() })
 $('setBtn').onclick = () => settingsPanel()
 $('sClose').onclick = () => hide('panel')
+$('skyPrev').onclick = () => { save.sky = Math.max(1, (save.sky || 1) - 1); store(); audio.play('click'); skyRow() }
+$('skyNext').onclick = () => { save.sky = Math.min(save.skyMax || 1, (save.sky || 1) + 1); store(); audio.play('click'); skyRow() }
 $('shopBtn').onclick = () => { audio.init(); audio.play('click'); shopPanel() }
 $('uClose').onclick = () => { hide('shop'); heroList() }
 $('contBtn').onclick = () => platform.rewardedAd((ok) => { if (!ok) return; platform.banner(false); game.cont = true; show('superBtn'); P.lives = 1; P.inv = 3; ebul = []; hide('over'); show('pauseBtn'); game.state = 'run' })
@@ -722,6 +760,7 @@ function frame(now) {
 async function boot() {
   await platform.init()
   await readSave()
+  if (BOT && +Q.get('sky') > 0) { save.skyMax = Math.max(save.skyMax || 1, +Q.get('sky')); save.sky = +Q.get('sky') }
   if (BOT && HEROES.includes(Q.get('hero'))) { save.hero = P.hero = Q.get('hero'); if (!save.owned.includes(save.hero)) save.owned.push(save.hero) } // tests: that hero, owned
   const asked = (window.bridge?.platform?.language || navigator.language || 'en').toLowerCase().slice(0, 2)
   lang = save.lang || (TEXT[asked] ? asked : 'en')
@@ -747,4 +786,4 @@ function simRun(hero, maxSecs = 900) {
   return window.__runs[window.__runs.length - 1]
 }
 if (BOT && HEROES.includes(Q.get('hero'))) save.hero = P.hero = Q.get('hero')
-if (BOT || Q.has('debug')) window.__sh = { game, P, save, audio, platform, startRun, useSuper, openCards, goHome, finish, shopPanel, heroList, settings: settingsPanel, measureDps, simRun, HEROES, CARDS, get foes() { return foes }, get up() { return up } }
+if (BOT || Q.has('debug')) window.__sh = { game, P, save, audio, platform, startRun, useSuper, cardPool, get upRaw() { return up }, set upRaw(v) { up = v }, openCards, goHome, finish, shopPanel, heroList, settings: settingsPanel, measureDps, simRun, HEROES, CARDS, get foes() { return foes }, get up() { return up } }
