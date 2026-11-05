@@ -45,8 +45,10 @@ const IMG = {}
 const NAMES = ['hero_knight', 'hero_fire_mage', 'hero_frost_hunter', 'hero_necromancer', 'hero_gambler', 'hero_smith',
   'enemy_slime', 'enemy_bat', 'enemy_ghost', 'enemy_shooter', 'enemy_charger', 'enemy_golem', 'enemy_splitter', 'enemy_mini_slime', 'enemy_brute',
   'boss_ogre', 'boss_demon', 'boss_warlock', 'p_fireball', 'p_crossbow_bolt', 'p_hammer', 'p_card', 'p_orbit_orb', 'p_missile', 'p_star_shard', 'p_shuriken',
+  'c_meteor', 'c_blaze', 'c_shatter', 'c_icicle', 'c_skulls', 'c_harvest', 'c_jackpot', 'c_double', 'c_anvil', 'c_shrapnel', 'c_guard', 'c_holy', 'c_storm', 'c_blizzard', 'c_sawring', 'c_gatling', 'c_squad', 'c_inferno',
   'c_main', 'c_power', 'c_rapid', 'c_pierce', 'c_wing', 'c_missile', 'c_orbit', 'c_lightning', 'c_nova', 'c_magnet', 'c_frost', 'c_crit', 'c_drone', 'c_bomb', 'c_life',
   'gem_small', 'gem_big', 'gem_huge', 'ebullet_round', 'ebullet_boss', 'heart_life',
+  'enemy_scorpion', 'enemy_vulture', 'enemy_cactus', 'enemy_sandworm', 'enemy_imp', 'enemy_lavablob', 'enemy_skullbat', 'enemy_magma', 'enemy_thundercloud', 'enemy_harpy', 'enemy_windspirit', 'enemy_armor', 'enemy_ufo', 'enemy_meteor', 'enemy_starjelly', 'enemy_alien', 'boss_scorpking', 'boss_mummy', 'boss_djinn', 'boss_lavadragon', 'boss_boneking', 'boss_firegiant', 'boss_stormgiant', 'boss_griffin', 'boss_thunderking', 'boss_moonbeast', 'boss_stardragon', 'boss_darkstar', 'd_desert_cactus', 'd_desert_palm', 'd_desert_skull', 'd_desert_rock', 'd_cloud_tower', 'd_cloud_pillar', 'd_cloud_puff', 'd_cloud_flag', 'd_space_planet', 'd_space_crystal', 'd_space_rock', 'd_space_satellite', 'd_hell_cold_rock', 'd_hell_dry_thorns', 'd_hell_lava_vent', 'd_hell_sulfur_rock',
   'c_coin', 'c_lock', 's_fire_mage', 's_frost_hunter', 's_necromancer', 's_gambler', 's_smith', 's_knight', 'c_greed', 'c_growth', 'c_shop',
   'd_bush', 'd_flowers', 'd_rock', 'd_stump', 'd_tree_pine', 'd_tree_round', 'd_grave_dead_tree', 'd_grave_tomb', 'd_hell_bone_pile', 'd_snow_ice_pillar', 'd_snow_pine', 'd_snow_rock', 't_slate', 't_ice']
 const loaded = Promise.all(NAMES.map((n) => new Promise((res) => { const i = new Image(); i.onload = res; i.onerror = res; i.src = `assets/${n}.webp`; IMG[n] = i })))
@@ -67,8 +69,8 @@ for (const [h, ids] of Object.entries(HERO_CARDS)) for (const id of ids) CARDS.p
 const EVOS = [{ id: 'storm', a: 'missile', b: 'power' }, { id: 'blizzard', a: 'lightning', b: 'frost' }, { id: 'sawring', a: 'orbit', b: 'pierce' }, { id: 'gatling', a: 'wing', b: 'rapid' }, { id: 'squad', a: 'drone', b: 'crit' }, { id: 'inferno', a: 'nova', b: 'bomb' }]
 for (const e of EVOS) CARDS.push({ id: e.id, evo: e, rar: 'l', max: 1 })
 const cardMax = (c) => c.max || MAXLV
-// sky stages: clearing sky N opens N+1, foes x2 health each, gold +50% each
-const skyHp = () => 2 ** (game.sky - 1), skyGold = () => 1 + 0.5 * (game.sky - 1)
+// sky stages: clearing sky N opens N+1, foes x1.6 health each, gold +50% each
+const skyHp = () => 1.6 ** (game.sky - 1), skyGold = () => 1 + 0.5 * (game.sky - 1)
 // between runs: gold buys lasting upgrades and opens heroes (BALANCE.md 6)
 const META = [
   { id: 'power', icon: 'c_power', base: 90, grow: 1.7, max: 10, per: 6 }, // damage +6% a level
@@ -92,9 +94,35 @@ const KINDS = {
   charger: { hp: 5, sp: 60, r: 30, img: 'enemy_charger', xp: 2, ai: 'dash' },
   golem: { hp: 22, sp: 40, r: 42, img: 'enemy_golem', xp: 6, ai: 'down' },
   splitter: { hp: 8, sp: 60, r: 32, img: 'enemy_splitter', xp: 3, ai: 'sway', split: 1 },
+  scorpion: { hp: 7, sp: 80, r: 30, img: 'enemy_scorpion', xp: 3, ai: 'park', shoot: 2.0, fan: 5 },
+  vulture: { hp: 3, sp: 150, r: 26, img: 'enemy_vulture', xp: 2, ai: 'swoop' },
+  cactus: { hp: 10, sp: 55, r: 30, img: 'enemy_cactus', xp: 3, ai: 'down', burst: 8 },
+  sandworm: { hp: 12, sp: 0, r: 32, img: 'enemy_sandworm', xp: 4, ai: 'pop', shoot: 1.6, ring: 1 },
+  imp: { hp: 3, sp: 130, r: 24, img: 'enemy_imp', xp: 2, ai: 'zig', shoot: 2.4 },
+  lavablob: { hp: 9, sp: 60, r: 32, img: 'enemy_lavablob', xp: 3, ai: 'sway', burst: 6 },
+  skullbat: { hp: 4, sp: 95, r: 24, img: 'enemy_skullbat', xp: 2, ai: 'home' },
+  magma: { hp: 34, sp: 42, r: 44, img: 'enemy_magma', xp: 8, ai: 'park', shoot: 2.4, ring: 1 },
+  thundercloud: { hp: 8, sp: 70, r: 32, img: 'enemy_thundercloud', xp: 3, ai: 'park', shoot: 3.4, rain: 1 },
+  harpy: { hp: 4, sp: 70, r: 28, img: 'enemy_harpy', xp: 2, ai: 'dash' },
+  windspirit: { hp: 6, sp: 60, r: 28, img: 'enemy_windspirit', xp: 3, ai: 'hover', shoot: 2.8, fan: 3 },
+  armor: { hp: 30, sp: 40, r: 40, img: 'enemy_armor', xp: 7, ai: 'down' },
+  ufo: { hp: 6, sp: 90, r: 30, img: 'enemy_ufo', xp: 3, ai: 'park', shoot: 2.4, burst3: 1 },
+  meteor: { hp: 3, sp: 165, r: 26, img: 'enemy_meteor', xp: 1, ai: 'down' },
+  starjelly: { hp: 8, sp: 60, r: 30, img: 'enemy_starjelly', xp: 3, ai: 'sway', splitSelf: 1 },
+  alien: { hp: 6, sp: 60, r: 28, img: 'enemy_alien', xp: 3, ai: 'hover', shoot: 3.0, ring: 1 },
   brute: { hp: 30, sp: 45, r: 44, img: 'enemy_brute', xp: 8, ai: 'park', shoot: 2.2, ring: 1 },
 }
 const BOSSES = { 5: { img: 'boss_ogre', hp: 420, r: 92 }, 10: { img: 'boss_demon', hp: 1500, r: 96 }, 15: { img: 'boss_warlock', hp: 4200, r: 96 } }
+const SKIES = [
+  null, // sky 1 uses ZONES below and BOSSES
+  { kinds: ['scorpion', 'vulture', 'cactus', 'sandworm'], bosses: ['boss_scorpking', 'boss_mummy', 'boss_djinn'], deco: ['d_desert_cactus', 'd_desert_palm', 'd_desert_skull', 'd_desert_rock'], ground: ['#ecc983', '#e3b56e', '#d79f5c'], dots: '#d4a65c' },
+  { kinds: ['imp', 'lavablob', 'skullbat', 'magma'], bosses: ['boss_lavadragon', 'boss_boneking', 'boss_firegiant'], deco: ['d_hell_cold_rock', 'd_hell_bone_pile', 'd_hell_dry_thorns', 'd_hell_sulfur_rock', 'd_hell_lava_vent'], ground: ['#5a3a3a', '#4c2e30', '#3e2428'], dots: '#6e4440' },
+  { kinds: ['thundercloud', 'harpy', 'windspirit', 'armor'], bosses: ['boss_stormgiant', 'boss_griffin', 'boss_thunderking'], deco: ['d_cloud_tower', 'd_cloud_pillar', 'd_cloud_puff', 'd_cloud_flag', 'd_cloud_puff'], ground: ['#a9d8ff', '#9ccaf6', '#8ab8ea'], dots: '#c9e8ff' },
+  { kinds: ['ufo', 'meteor', 'starjelly', 'alien'], bosses: ['boss_moonbeast', 'boss_stardragon', 'boss_darkstar'], deco: ['d_space_planet', 'd_space_crystal', 'd_space_rock', 'd_space_satellite'], ground: ['#2a2458', '#221d4a', '#1a163c'], dots: '#fff7c0' },
+]
+const skyOf = () => SKIES[(game.sky - 1) % 5] // sky 6 and up look like 1..5 again, only stronger
+const zoneNow = () => { const z = Math.min(2, Math.floor((game.wave - 1) / 5)), S = skyOf(); return S ? { ground: S.ground[z], dots: S.dots, deco: S.deco } : ZONES[z] }
+const bossImg = (w) => { const S = skyOf(); return S ? S.bosses[w / 5 - 1] : BOSSES[w].img }
 const ZONES = [ // waves 1-5 moss forest, 6-10 old graveyard, 11-15 snow peaks
   { ground: '#7fc070', dots: '#6aab5e', deco: ['d_tree_round', 'd_tree_pine', 'd_bush', 'd_flowers', 'd_rock', 'd_stump'] },
   { ground: '#6b6a86', tile: 't_slate', deco: ['d_grave_dead_tree', 'd_grave_tomb', 'd_hell_bone_pile', 'd_rock'] },
@@ -189,7 +217,7 @@ const stat = {
   get magnet() { return 140 * (1 + 0.5 * lvOf('magnet')) * (1 + 0.12 * mLv('magnet')) },
 }
 function resetRun() {
-  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, sky: SIM ? +Q.get('sky') || 1 : Math.min(save.sky || 1, save.skyMax || 1), forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], gold: 0 })
+  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, sky: SIM ? +Q.get('sky') || 1 : Math.min(save.sky || 1, save.skyMax || 1), forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], hitBy: [], gold: 0 })
   Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0, supers: 1, guard: 0, guardT: 0 })
   foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; up = { main: 1 }
   timers = { missile: 0, lightning: 0, bomb: 6, drone: 0, wing: 0 }
@@ -234,6 +262,8 @@ function fireMain() {
 
 // ---------------------------------------------------------------- waves
 function waveRecipe(w) {
+  const S = skyOf()
+  if (S) { const [a, b, c, d] = S.kinds, list = [a, b, a, b, 'slime']; if (w >= 3) list.push(c, c); if (w >= 5) list.push(d, 'shooter'); if (w >= 8) list.push(c, d, 'golem'); if (w >= 11) list.push(a, d, 'brute'); return list }
   const list = ['slime', 'bat']
   if (w >= 2) list.push('ghost', 'slime')
   if (w >= 3) list.push('charger', 'splitter')
@@ -246,7 +276,7 @@ function waveRecipe(w) {
 const hpScale = (w) => 1.19 ** (w - 1) * (1 + 0.01 * (w - 1) ** 2) // x2.3 at wave 5, x8.3 at 10, x33 at 15 (BALANCE.md)
 function formation(w) {
   const kind = pick(waveRecipe(w)), shape = pick(['line', 'v', 'column', 'scatter', 'arc']), colX = rnd(80, W - 80)
-  const n = kind === 'golem' || kind === 'brute' ? 1 + Math.floor(w / 6) : 4 + Math.floor(w / 2)
+  const big = KINDS[kind].hp >= 20, n = big ? 1 + Math.floor(w / 6) : kind === 'meteor' ? 4 + Math.floor(w / 2) : KINDS[kind].ai === 'pop' ? 1 + Math.floor(w / 5) : 4 + Math.floor(w / 2)
   for (let i = 0; i < n; i++) {
     let x = W / 2, y = -40, delay = 0
     if (shape === 'line') { x = 60 + (W - 120) * (n === 1 ? 0.5 : i / (n - 1)) }
@@ -264,7 +294,7 @@ function spawn(kind, x, y, extra = {}) {
 }
 function spawnBoss() {
   const B = BOSSES[game.wave], hp = B.hp * hpScale(game.wave) / hpScale(game.wave >= 10 ? 10 : 5) * (game.wave === 15 ? 1.1 : 1) * skyHp()
-  foes.push({ kind: 'boss', boss: game.wave, img: B.img, x: W / 2, y: -120, vx: 0, vy: 90, hp, max: hp, r: B.r, t: 0, shoot: 1.5, slow: 0, hitT: 0, ph: 0 })
+  foes.push({ kind: 'boss', boss: game.wave, img: bossImg(game.wave), x: W / 2, y: -120, vx: 0, vy: 90, hp, max: hp, r: B.r, t: 0, shoot: 1.5, slow: 0, hitT: 0, ph: 0 })
   game.bossOn = true; game.bossN = (game.bossN || 0) + 1; game.bossFrom = game.time; banner(t('boss'), '#ff5a6a'); audio.play('boss')
 }
 function banner(text, col = '#fff') { game.banner = { text, t: 0, col } }
@@ -321,7 +351,7 @@ function tick(dt) {
   // foes
   for (let i = foes.length - 1; i >= 0; i--) {
     const f = foes[i]; f.t += dt; if (f.hitT > 0) f.hitT -= dt; if (f.slow > 0) f.slow -= dt
-    const sm = (f.slow > 0 ? 0.5 : 1) * (f.y < 70 && f.kind !== 'boss' ? 3 : 1) // enter the screen quickly, then their own speed
+    const sm = (f.slow > 0 ? 0.5 : 1) * (f.y < 70 && f.kind !== 'boss' && KINDS[f.kind]?.ai !== 'pop' ? 3 : 1) // enter the screen quickly, then their own speed
     if (f.kind === 'boss') bossAI(f, dt)
     else {
       const k = KINDS[f.kind]
@@ -330,15 +360,18 @@ function tick(dt) {
       else if (k.ai === 'hover') { f.y += (f.y < H * 0.3 ? f.vy : f.vy * 0.25) * dt * sm }
       else if (k.ai === 'park') { const stop = H * (0.18 + (f.ph % 1) * 0.12); f.y += (f.y < stop ? f.vy * 1.6 : (f.t > 9 ? f.vy * 1.5 : 0)) * dt * sm; f.x += Math.sin(f.t * 0.8 + f.ph) * 30 * dt }
       else if (k.ai === 'dash') { if (!f.dash && f.y > H * 0.2) { f.dash = 0.7 } if (f.dash > 0) { f.dash -= dt; if (f.dash <= 0) { const a = Math.atan2(P.y - f.y, P.x - f.x); f.vx = Math.cos(a) * 420; f.vy = Math.sin(a) * 420; f.dash = -1 } } else { f.x += f.vx * dt * sm; f.y += f.vy * dt * sm } }
+      else if (k.ai === 'swoop') { f.y += f.vy * dt * sm; if (f.y > H * 0.25) f.x += clamp(P.x - f.x, -1, 1) * 170 * dt * sm } // dives and leans toward the hero
+      else if (k.ai === 'home') { const a = Math.atan2(P.y - f.y, P.x - f.x); f.x += Math.cos(a) * f.vy * dt * sm; f.y += Math.max(30, Math.sin(a) * f.vy) * dt * sm }
+      else if (k.ai === 'pop') { if (!f.popAt) { f.popAt = 1; f.y = rnd(H * 0.15, H * 0.45); f.x = rnd(70, W - 70) } if (f.t > 5) f.y += 260 * dt } // rises out of the ground mid-screen, fires, then sinks away
       else if (k.ai !== 'still') f.y += f.vy * dt * sm
       if (k.shoot && f.y > 20) { f.shoot -= dt; if (f.shoot <= 0) { f.shoot = k.shoot * rnd(0.85, 1.2); enemyFire(f, k) } }
     }
     f.x = clamp(f.x, 16, W - 16)
     if (f.y > H + 80 || f.x < -100 || f.x > W + 100) { foes.splice(i, 1); continue }
-    if (P.inv <= 0 && dist2(f, P) < (f.r * 0.8 + P.r) ** 2) playerHit()
+    if (P.inv <= 0 && dist2(f, P) < (f.r * 0.8 + P.r) ** 2) { game.hitBy.push(f.kind); playerHit() }
   }
   // enemy bullets
-  for (let i = ebul.length - 1; i >= 0; i--) { const b = ebul[i]; b.x += b.vx * dt; b.y += b.vy * dt; if (b.y > H + 20 || b.y < -40 || b.x < -20 || b.x > W + 20) { ebul.splice(i, 1); continue } if (P.inv <= 0 && dist2(b, P) < (b.r + P.r * 0.7) ** 2) { ebul.splice(i, 1); playerHit(); break } } // playerHit replaces ebul (clears nearby bullets), so stop walking the old one
+  for (let i = ebul.length - 1; i >= 0; i--) { const b = ebul[i]; b.x += b.vx * dt; b.y += b.vy * dt; if (b.y > H + 20 || b.y < -40 || b.x < -20 || b.x > W + 20) { ebul.splice(i, 1); continue } if (P.inv <= 0 && dist2(b, P) < (b.r + P.r * 0.7) ** 2) { game.hitBy.push('shot:' + (b.from || 'boss')); ebul.splice(i, 1); playerHit(); break } } // playerHit replaces ebul (clears nearby bullets), so stop walking the old one
   // gems
   for (let i = gems.length - 1; i >= 0; i--) {
     const g = gems[i], d = Math.sqrt(dist2(g, P))
@@ -352,10 +385,13 @@ function tick(dt) {
   updateDecos(dt)
 }
 function nearest(p, range, skip) { let best = null, bd = range * range; for (const f of foes) { if (f.dead || (skip && skip.has(f))) continue; const d = dist2(p, f); if (d < bd) { bd = d; best = f } } return best }
-function enemyFire(f, k) {
+function enemyFire(f, k) { const n0 = ebul.length; enemyFire0(f, k); for (let i = n0; i < ebul.length; i++) ebul[i].from = f.kind } // tag: who fired (balance: what hits the hero)
+function enemyFire0(f, k) {
   const a = Math.atan2(P.y - f.y, P.x - f.x), sp = (230 + game.wave * 6) * (1 + 0.05 * (game.sky - 1))
   if (k.ring) { for (let i = 0; i < 10; i++) { const b = i / 10 * Math.PI * 2; ebul.push({ x: f.x, y: f.y, vx: Math.cos(b) * sp * 0.8, vy: Math.sin(b) * sp * 0.8, r: 8 }) } return }
-  const n = f.kind === 'shooter' ? 3 : 1
+  if (k.rain) { for (let i = 0; i < 4; i++) ebul.push({ x: f.x + rnd(-6, 6), y: f.y + f.r * 0.5 + i * 30, vx: 0, vy: sp * 0.95, r: 8 }); return } // a column of rain straight down
+  if (k.burst3) { for (let i = 0; i < 3; i++) ebul.push({ x: f.x, y: f.y + f.r * 0.5, vx: Math.cos(a) * sp * (0.8 + i * 0.12), vy: Math.sin(a) * sp * (0.8 + i * 0.12), r: 8 }); return }
+  const n = k.fan || (f.kind === 'shooter' ? 3 : 1)
   for (let i = 0; i < n; i++) { const b = a + (i - (n - 1) / 2) * 0.22; ebul.push({ x: f.x, y: f.y + f.r * 0.5, vx: Math.cos(b) * sp, vy: Math.sin(b) * sp, r: 8 }) }
 }
 function bossAI(f, dt) {
@@ -366,7 +402,7 @@ function bossAI(f, dt) {
     const sp = 210 + game.wave * 4
     if (f.boss === 5) { const a = Math.atan2(P.y - f.y, P.x - f.x); for (let i = -2; i <= 2; i++) ebul.push({ x: f.x, y: f.y + 50, vx: Math.cos(a + i * 0.18) * sp, vy: Math.sin(a + i * 0.18) * sp, r: 10, boss: 1 }); f.shoot = 1.3 }
     else if (f.boss === 10) { for (let i = 0; i < 14; i++) { const b = f.t * 1.7 + i / 14 * Math.PI * 2; ebul.push({ x: f.x, y: f.y, vx: Math.cos(b) * sp, vy: Math.sin(b) * sp, r: 9, boss: 1 }) } f.shoot = 0.9 }
-    else { for (let i = 0; i < 18; i++) { const b = i / 18 * Math.PI * 2 + f.t; ebul.push({ x: f.x, y: f.y, vx: Math.cos(b) * sp * 0.9, vy: Math.sin(b) * sp * 0.9, r: 9, boss: 1 }) } if (Math.floor(f.t) % 4 === 0) { spawn('bat', f.x - 90, f.y); spawn('bat', f.x + 90, f.y) } f.shoot = 1.0 }
+    else { for (let i = 0; i < 18; i++) { const b = i / 18 * Math.PI * 2 + f.t; ebul.push({ x: f.x, y: f.y, vx: Math.cos(b) * sp * 0.9, vy: Math.sin(b) * sp * 0.9, r: 9, boss: 1 }) } if (Math.floor(f.t) % 4 === 0) { const m = skyOf() ? skyOf().kinds[1] : 'bat'; spawn(m, f.x - 90, f.y); spawn(m, f.x + 90, f.y) } f.shoot = 1.0 }
   }
 }
 function hurt(f, dmg, src) {
@@ -394,6 +430,8 @@ function kill(f) {
   gems.push({ x: f.x, y: f.y, v: k.xp + lvOf('harvest') })
   if (lvOf('skulls') && Math.random() < 0.15 * lvOf('skulls')) shots.push({ x: f.x, y: f.y, vx: rnd(-200, 200), vy: -500, r: 12, dmg: stat.dmg * 3, home: 1, life: 2.5, img: 'p_orbit_orb', size: 40, glow: '#c07aff', pierce: 1 })
   if (k.split) for (const s of [-1, 1]) spawn('mini', f.x + s * 16, f.y, { vy: 120 })
+  if (k.splitSelf && !f.small) for (const s of [-1, 1]) spawn(f.kind, f.x + s * 18, f.y, { vy: 110, r: f.r * 0.65, hp: f.max * 0.3, max: f.max * 0.3, small: 1 })
+  if (k.burst) { const sp = 190 + game.wave * 4; for (let i = 0; i < k.burst; i++) { const b = i / k.burst * Math.PI * 2 + 0.3; ebul.push({ x: f.x, y: f.y, vx: Math.cos(b) * sp, vy: Math.sin(b) * sp, r: 7 }) } } // needles / embers fly out
   if (lvOf('inferno')) explode(f.x, f.y, 130, 4 * stat.dmg)
   else if (lvOf('nova') && Math.random() < 0.2 + 0.12 * lvOf('nova')) explode(f.x, f.y, 70 + 12 * lvOf('nova'), 2.5 * stat.dmg)
   audio.play('pop')
@@ -482,14 +520,14 @@ function openCards(auto = BOT) {
 
 // ---------------------------------------------------------------- background
 function updateDecos(dt) {
-  const zone = ZONES[Math.min(2, Math.floor((game.wave - 1) / 5))], sp = 70 + game.wave * 4
+  const zone = zoneNow(), sp = 70 + game.wave * 4
   for (const d of decos) d.y += sp * dt
   decos = decos.filter((d) => d.y < H + 80)
   while (decos.length < 22) decos.push({ img: pick(zone.deco), x: rnd(-20, W + 20), y: rnd(-H, -40) - (decos.length ? 0 : 0), s: rnd(0.7, 1.15), zone })
 }
-function initDecos() { decos = []; const zone = ZONES[0]; for (let i = 0; i < 22; i++) decos.push({ img: pick(zone.deco), x: rnd(-20, W + 20), y: rnd(-40, H), s: rnd(0.7, 1.15), zone }) }
+function initDecos() { decos = []; const zone = zoneNow(); for (let i = 0; i < 22; i++) decos.push({ img: pick(zone.deco), x: rnd(-20, W + 20), y: rnd(-40, H), s: rnd(0.7, 1.15), zone }) }
 function drawGround() {
-  const zone = ZONES[Math.min(2, Math.floor((game.wave - 1) / 5))]
+  const zone = zoneNow()
   X.fillStyle = zone.ground; X.fillRect(0, 0, W, H)
   if (zone.tile && IMG[zone.tile].complete) { X.globalAlpha = 0.5; const o = game.scroll % 256; for (let y = -256 + o; y < H; y += 256) for (let x = 0; x < W; x += 256) X.drawImage(IMG[zone.tile], x, y, 256, 256); X.globalAlpha = 1 }
   else { X.fillStyle = zone.dots; const o = game.scroll % 40; for (let y = -40 + o; y < H; y += 40) for (let x = (y / 40 % 2) * 20; x < W; x += 40) X.fillRect(x, y, 4, 4) }
@@ -513,7 +551,7 @@ function sprite(name, x, y, size, rot = 0, alpha = 1) {
 }
 function draw() {
   const sw = C.width, sh = C.height, scale = Math.min(sw / W, sh / H), ox = (sw - W * scale) / 2, oy = (sh - H * scale) / 2
-  X.setTransform(1, 0, 0, 1, 0, 0); X.fillStyle = ZONES[Math.min(2, Math.floor((game.wave - 1) / 5))].ground; X.fillRect(0, 0, sw, sh); X.fillStyle = 'rgba(26,22,54,0.62)'; X.fillRect(0, 0, sw, sh) // side bands in landscape keep the zone colour
+  X.setTransform(1, 0, 0, 1, 0, 0); X.fillStyle = zoneNow().ground; X.fillRect(0, 0, sw, sh); X.fillStyle = 'rgba(26,22,54,0.62)'; X.fillRect(0, 0, sw, sh) // side bands in landscape keep the zone colour
   const shk = save.shake ? game.shake : 0
   X.setTransform(scale, 0, 0, scale, ox + (Math.random() - 0.5) * shk * scale, oy + (Math.random() - 0.5) * shk * scale)
   X.save(); X.beginPath(); X.rect(0, 0, W, H); X.clip()
@@ -526,7 +564,7 @@ function draw() {
     X.save(); X.fillStyle = 'rgba(20,10,40,0.25)'; X.beginPath(); X.ellipse(f.x + 10, f.y + f.r * 0.9, f.r * 0.8, f.r * 0.3, 0, 0, 7); X.fill(); X.restore()
     sprite(img, f.x, f.y, size, 0, 1)
     if (f.hitT > 0) { X.save(); X.globalCompositeOperation = 'lighter'; sprite(img, f.x, f.y, size, 0, 0.5); X.restore() }
-    if (f.dash > 0 && Math.floor(f.t * 12) % 2) { X.save(); X.globalCompositeOperation = 'lighter'; sprite(img, f.x, f.y, size, 0, 0.6); X.restore() } // about to charge: the foe itself blinks
+    if (((f.dash > 0) || (KINDS[f.kind]?.rain && f.shoot < 0.6 && f.y > 20)) && Math.floor(f.t * 12) % 2) { X.save(); X.globalCompositeOperation = 'lighter'; sprite(img, f.x, f.y, size, 0, 0.6); X.restore() } // about to charge: the foe itself blinks
     if (f.kind === 'boss') { const w = 300, x0 = W / 2 - 20 - w / 2; X.fillStyle = '#2a1d55'; X.fillRect(x0 - 3, 84, w + 6, 20); X.fillStyle = '#ff5a6a'; X.fillRect(x0, 87, w * Math.max(0, f.hp / f.max), 14) }
   }
   // player shots: an additive halo first, then the sprite with normal blending ('lighter' sprites turn white on the snow)
@@ -541,9 +579,9 @@ function draw() {
   }
   X.restore()
   // orbit orbs
-  if (lvOf('orbit')) { const n = lvOf('sawring') ? 8 : 1 + lvOf('orbit'), R = orbitR(); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n; sprite(lvOf('sawring') ? 'p_shuriken' : 'p_orbit_orb', P.x + Math.cos(a) * R, P.y + Math.sin(a) * R, lvOf('sawring') ? 46 : 34, lvOf('sawring') ? game.time * 12 : 0) } }
+  if (lvOf('orbit') && game.state !== 'title') { const n = lvOf('sawring') ? 8 : 1 + lvOf('orbit'), R = orbitR(); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n; sprite(lvOf('sawring') ? 'p_shuriken' : 'p_orbit_orb', P.x + Math.cos(a) * R, P.y + Math.sin(a) * R, lvOf('sawring') ? 46 : 34, lvOf('sawring') ? game.time * 12 : 0) } }
   // drones
-  for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1; sprite('p_shuriken', P.x + s * (70 + Math.floor(i / 2) * 26), P.y + 40, 26, game.time * 10) }
+  if (game.state !== 'title') for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1; sprite('p_shuriken', P.x + s * (70 + Math.floor(i / 2) * 26), P.y + 40, 26, game.time * 10) }
   // player
   if (game.state !== 'title' && P.lives > 0 && !(P.inv > 0 && Math.floor(P.inv * 12) % 2 === 0)) {
     X.fillStyle = 'rgba(20,10,40,0.25)'; X.beginPath(); X.ellipse(P.x + 14, P.y + 56, 34, 11, 0, 0, 7); X.fill()
@@ -584,7 +622,7 @@ function hud() {
     const y = top + step * (15 - w), boss = !!BOSSES[w], done = w < game.wave, now = w === game.wave
     X.fillStyle = done ? '#ffd34d' : now ? '#fff' : '#5a4e8a'; X.strokeStyle = '#2a1d55'; X.lineWidth = 3
     X.beginPath(); X.arc(26, y, boss ? 12 : now ? 9 : 6, 0, 7); X.fill(); X.stroke()
-    if (boss) sprite(BOSSES[w].img, 26, y, 22, 0, done ? 0.5 : 1)
+    if (boss) sprite(bossImg(w), 26, y, 22, 0, done ? 0.5 : 1)
   }
   // level bar
   X.fillStyle = '#2a1d55'; X.fillRect(90, H - 22, W - 180, 12); X.fillStyle = '#6ff0ff'; X.fillRect(92, H - 20, (W - 184) * clamp(game.xp / game.need, 0, 1), 8)
@@ -661,7 +699,8 @@ function heroList() {
 function skyRow() {
   const max = save.skyMax || 1; save.sky = clamp(save.sky || 1, 1, max)
   $('skyRow').classList.toggle('hide', max < 2)
-  $('skyName').textContent = t('sky').replace('#', save.sky); $('skyPrev').disabled = save.sky <= 1; $('skyNext').disabled = save.sky >= max
+  if (game.state === 'title' && game.sky !== save.sky) { game.sky = save.sky; initDecos() } // the title shows the chosen sky's ground
+  $('skyName').textContent = t('sky').replace('#', save.sky) + ' · ' + t('sky' + ((save.sky - 1) % 5 + 1)); $('skyPrev').disabled = save.sky <= 1; $('skyNext').disabled = save.sky >= max
 }
 function shopPanel() {
   const rows = $('uRows'); rows.innerHTML = ''
@@ -716,7 +755,7 @@ function finish(won) {
   setTimeout(() => platform.banner(true), 600)
   setTimeout(() => show('over'), 600)
   if (BOT && Q.has('loop')) setTimeout(() => { if (game.state === 'over') startRun() }, 4000) // soak test: keep playing
-  window.__runs = (window.__runs || []).concat([{ hero: P.hero, wave: reached, level: game.level, kills: game.kills, score: game.score, won, sky: game.sky, bosses: game.bossN, gold: earned, time: Math.round(game.time), levelAt: game.levelAt, hitAt: game.hitAt, bossT: game.bossT, cards: { ...up } }])
+  window.__runs = (window.__runs || []).concat([{ hero: P.hero, wave: reached, level: game.level, kills: game.kills, score: game.score, won, hitBy: game.hitBy, sky: game.sky, bosses: game.bossN, gold: earned, time: Math.round(game.time), levelAt: game.levelAt, hitAt: game.hitAt, bossT: game.bossT, cards: { ...up } }])
 }
 function togglePause() {
   if (game.state === 'run') { game.state = 'paused'; show('pause') } else if (game.state === 'paused') { hide('pause'); game.state = 'run' }
