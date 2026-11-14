@@ -4,7 +4,7 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, LANGUAGES } from './strings.js?v=5ca9279'
+import { STR, CITY, LANGUAGES } from './strings.js?v=0668926'
 const city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
@@ -821,7 +821,7 @@ function updateSparks(dt) {
 
 // ---------------------------------------------------------------- save (Playgama storage and this device; the newer one wins)
 // bump when a sound file changes, so phones never keep an old cached sound (11-14: the old hiss stayed)
-const AUDIO_V = 2
+const AUDIO_V = 3
 const SAVE_KEY = 'baekho_pocha'
 const save = { at: 0, runs: 0, clears: 0, bestTime: 0, bestServed: 0, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
 let saveReady = false, saveTimer = 0
