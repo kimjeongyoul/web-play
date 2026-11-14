@@ -4,7 +4,7 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, LANGUAGES } from './strings.js?v=8fca9c5'
+import { STR, CITY, LANGUAGES } from './strings.js?v=9c46852'
 const city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
@@ -642,9 +642,12 @@ function work(w, p) {
     if (w.items.length < w.cap && (!top || top === `raw${p.stall}`)) { w.items.push(`raw${p.stall}`); return 'pop' }
   } else if (p.kind === 'grill') {
     const s = stalls[p.stall]
-    if (top === `raw${p.stall}` && s.raw + s.food < MAX_GRILL) { w.items.pop(); s.raw++; return 'drop' }
-    if (top?.startsWith('raw')) return null
-    if ((!top || top === `food${p.stall}`) && s.food > 0 && w.items.length < w.cap) { s.food--; w.items.push(`food${p.stall}`); return 'pop' }
+    if (top === `raw${p.stall}` && s.raw + s.food < MAX_GRILL) { w.items.pop(); s.raw++; sear(s.grill); return 'drop' }
+    // the player holding this stall's raw at a full grill must never be stuck: take cooked food on top, or swap when hands are full
+    const mine = w === player && top === `raw${p.stall}` && s.food > 0
+    if (mine && w.items.length >= w.cap) { w.items.pop(); s.raw++; s.food--; sear(s.grill); w.items.push(`food${p.stall}`); return 'pop' }
+    if (top?.startsWith('raw') && !mine) return null
+    if ((!top || top === `food${p.stall}` || mine) && s.food > 0 && w.items.length < w.cap) { s.food--; w.items.push(`food${p.stall}`); return 'pop' }
   } else if (p.kind === 'disp') {
     const s = stalls[p.stall]
     if (top === `food${p.stall}` && s.shown < MAX_DISP) { w.items.pop(); s.shown++; return 'drop' }
@@ -740,6 +743,13 @@ function movePlayer(dt) {
     }
   }
   setStack(rig.stack, player.items)
+}
+// batter on a griddle: a short sear, heard only near Baekho (max 0.18, under half the old loop's 0.38), at most every 0.4 s
+let searT = 0
+function sear(at) {
+  const d = Math.hypot(player.x - at.x, player.z - at.z), now = performance.now()
+  if (d > 5 || now - searT < 400) return
+  searT = now; sfx('sear', 0.18 * (1 - d / 5) + 0.02)
 }
 function unlock(st) {
   sfx('unlock'); buzz(40); game.lit++; game.unlocks.push(Math.round(game.time))
@@ -907,7 +917,7 @@ const audio = {
     applyVolume()
     for (const n of ['pop', 'drop', 'coin', 'angry', 'unlock', 'rush', 'end', 'click']) this.load(n)
     this.load('market').then(() => this.startMusic())
-    for (const n of ['sizzle', 'crowd']) this.load(n).then(() => this.startLoop(n))
+    this.load('crowd').then(() => this.startLoop('crowd')); this.load('sear')
   },
   async load(name) {
     try { this.buffers[name] = await this.ctx.decodeAudioData(await (await fetch(`audio/${name}.ogg`)).arrayBuffer()) } catch (error) { console.warn('sound', name, error) }
@@ -917,17 +927,17 @@ const audio = {
     const src = this.ctx.createBufferSource(), g = this.ctx.createGain(); src.buffer = this.buffers[name]; g.gain.value = vol
     src.connect(g).connect(this.sfxGain); src.start()
   },
-  // street ambience under the music: the crowd murmurs all night, the griddles sizzle louder as more stalls open
+  // street ambience under the music: the crowd murmurs all night (the griddle is a one-shot 'sear', see sear())
   loops: {},
   startLoop(name) {
     if (this.loops[name] || !this.buffers[name]) return
     const src = this.ctx.createBufferSource(), g = this.ctx.createGain(); src.buffer = this.buffers[name]; src.loop = true; g.gain.value = 0
     src.connect(g).connect(this.sfxGain); src.start(); this.loops[name] = g
   },
-  ambience(crowd, sizzle) {
+  ambience(crowd) {
     if (!this.ctx) return
     const now = this.ctx.currentTime
-    this.loops.crowd?.gain.setTargetAtTime(crowd, now, 0.4); this.loops.sizzle?.gain.setTargetAtTime(sizzle, now, 0.3)
+    this.loops.crowd?.gain.setTargetAtTime(crowd, now, 0.4)
   },
   startMusic() {
     if (this.music || !this.buffers.market) return
@@ -1123,8 +1133,10 @@ addEventListener('resize', resize); resize()
 function updateCamera(dt, snap) {
   const aspect = camera.aspect, tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), wide = aspect >= 1
   const k = snap ? 1 : 1 - Math.exp(-dt * 2.2)
+  if (game.coverCam) { camera.position.set(...game.coverCam.pos); camera.lookAt(...game.coverCam.look); return } // tools/covers.mjs
   if (game.phase === 'play') {
-    const d = wide ? 15.5 : 20, h = d * 0.7, zoff = d * (wide ? 0.72 : 0.74)
+    // camZoom: closer view for the cover shots (tools/covers.mjs)
+    const d = (wide ? 15.5 : 20) * (game.camZoom || 1), h = d * 0.7, zoff = d * (wide ? 0.72 : 0.74)
     // where the bottom screen edge meets the ground, relative to camAt (11-14 user: walking down left Baekho off screen)
     const half = THREE.MathUtils.degToRad(camera.fov / 2), bottom = zoff - h / Math.tan(Math.atan2(h, zoff + 0.5) + half)
     // the next spot pulls the view a little (at most 2 m), so Baekho always stays near the middle
@@ -1191,15 +1203,11 @@ function frame(now) {
   requestAnimationFrame(frame)
   const real = Math.min(0.05, (now - last) / 1000); last = now
   const hold = game.paused || platform.adOpen || platform.paused
-  if (!hold) for (let n = 0; n < SPEED; n++) step(real, now)
+  if (!hold) for (let n = 0; n < (game.film || SPEED); n++) step(real, now) // game.film: time-lapse for shorts (tools/short_rec.mjs)
   updateCamera(real)
   if (game.phase === 'play' && now - mapT > 90) { mapT = now; drawMap(now) }
   updateEdge()
-  if (audio.ctx) {
-    let near = 99; for (const st of stalls) if (st.open) near = Math.min(near, Math.hypot(player.x - st.grill.x, player.z - st.grill.z))
-    const play = game.phase === 'play'
-    audio.ambience(play ? 0.16 + (game.rush ? 0.14 : 0) + Math.min(0.12, customers.length * 0.008) : 0.08, play ? 0.04 * openCount() + Math.max(0, 1 - near / 4) * 0.22 : 0)
-  }
+  if (audio.ctx) audio.ambience(game.phase === 'play' ? 0.16 + (game.rush ? 0.14 : 0) + Math.min(0.12, customers.length * 0.008) : 0.08)
   renderer.render(scene, camera)
 }
 function step(dt, now) {
@@ -1248,4 +1256,4 @@ requestAnimationFrame(frame)
   window.__ready = true
 })()
 
-if (Q.has('debug')) window.__gt = { RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, stalls, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, STEPS, findPath, camera }
+if (Q.has('debug')) window.__gt = { pads, MAX_GRILL, RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, stalls, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, STEPS, findPath, camera }
