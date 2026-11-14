@@ -4,7 +4,7 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, LANGUAGES } from './strings.js?v=0668926'
+import { STR, CITY, LANGUAGES } from './strings.js?v=3a2fa4f'
 const city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
@@ -749,7 +749,7 @@ let searT = 0
 function sear(at) {
   const d = Math.hypot(player.x - at.x, player.z - at.z), now = performance.now()
   if (d > 5 || now - searT < 400) return
-  searT = now; sfx('sear', 0.18 * (1 - d / 5) + 0.02)
+  searT = now // (11-14 user: still hearing a hiss) no griddle sound at all; the 'drop' sound is enough
 }
 function unlock(st) {
   sfx('unlock'); buzz(40); game.lit++; game.unlocks.push(Math.round(game.time))
@@ -821,7 +821,7 @@ function updateSparks(dt) {
 
 // ---------------------------------------------------------------- save (Playgama storage and this device; the newer one wins)
 // bump when a sound file changes, so phones never keep an old cached sound (11-14: the old hiss stayed)
-const AUDIO_V = 3
+const AUDIO_V = 4
 const SAVE_KEY = 'baekho_pocha'
 const save = { at: 0, runs: 0, clears: 0, bestTime: 0, bestServed: 0, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
 let saveReady = false, saveTimer = 0
@@ -919,7 +919,7 @@ const audio = {
     applyVolume()
     for (const n of ['pop', 'drop', 'coin', 'angry', 'unlock', 'rush', 'end', 'click']) this.load(n)
     this.load('market').then(() => this.startMusic())
-    this.load('sear') // no noise loops at all (11-14 user: a steady rustle under the effects, twice)
+    // no noise loops at all (11-14 user: a steady rustle under the effects, twice)
   },
   async load(name) {
     try { this.buffers[name] = await this.ctx.decodeAudioData(await (await fetch(`audio/${name}.ogg?v=${AUDIO_V}`)).arrayBuffer()) } catch (error) { console.warn('sound', name, error) }
