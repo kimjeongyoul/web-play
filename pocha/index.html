@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Baekho Pocha</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="hide">
+  <div id="money" class="pill"><span class="coin"></span><b id="moneyTxt">0</b></div>
+  <div id="timer" class="pill">2:00</div>
+</div>
+<div id="banner"></div>
+<div id="hint"></div>
+<div id="stick" class="hide"><div id="knob"></div></div>
+<section id="title" class="card">
+  <h1 id="titleTxt"></h1>
+  <p id="subTxt"></p>
+  <button id="startBtn"></button>
+</section>
+<section id="end" class="card hide">
+  <h2 id="endTitle"></h2>
+  <div class="row"><span id="earnedLbl"></span><b id="earnedTxt"></b></div>
+  <div class="row"><span id="servedLbl"></span><b id="servedTxt"></b></div>
+  <div class="row"><span id="lostLbl"></span><b id="lostTxt"></b></div>
+  <button id="againBtn"></button>
+</section>
+<script type="module" src="game.js"></script>
+</body>
+</html>
