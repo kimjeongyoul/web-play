@@ -4,13 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Baekho Pocha</title>
-<link rel="stylesheet" href="style.css?v=6da654f">
+<link rel="stylesheet" href="style.css?v=404cea4">
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hud" class="hide">
-  <div id="money" class="pill"><span class="coin"></span><b id="moneyTxt">0</b></div>
-  <div id="timer" class="pill">2:00</div>
+  <div class="top">
+    <div id="money" class="pill"><span class="coin"></span><b id="moneyTxt">0</b></div>
+    <div id="street" class="pill"><span id="lamps"></span><b id="streetTxt">1/8</b></div>
+  </div>
+  <div id="goal" class="pill"></div>
 </div>
 <div id="banner"></div>
 <div id="hint"></div>
@@ -22,11 +25,13 @@
 </section>
 <section id="end" class="card hide">
   <h2 id="endTitle"></h2>
+  <div class="row"><span id="timeLbl"></span><b id="timeTxt"></b></div>
   <div class="row"><span id="earnedLbl"></span><b id="earnedTxt"></b></div>
   <div class="row"><span id="servedLbl"></span><b id="servedTxt"></b></div>
   <div class="row"><span id="lostLbl"></span><b id="lostTxt"></b></div>
+  <div id="nextCity"><span id="nextCityLbl"></span><b id="nextCityTxt"></b><i id="lock"></i></div>
   <button id="againBtn"></button>
 </section>
-<script type="module" src="game.js?v=6da654f"></script>
+<script type="module" src="game.js?v=404cea4"></script>
 </body>
 </html>
