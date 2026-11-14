@@ -4,7 +4,7 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, LANGUAGES } from './strings.js?v=9c46852'
+import { STR, CITY, LANGUAGES } from './strings.js?v=5ca9279'
 const city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
@@ -820,6 +820,8 @@ function updateSparks(dt) {
 }
 
 // ---------------------------------------------------------------- save (Playgama storage and this device; the newer one wins)
+// bump when a sound file changes, so phones never keep an old cached sound (11-14: the old hiss stayed)
+const AUDIO_V = 2
 const SAVE_KEY = 'baekho_pocha'
 const save = { at: 0, runs: 0, clears: 0, bestTime: 0, bestServed: 0, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
 let saveReady = false, saveTimer = 0
@@ -917,10 +919,10 @@ const audio = {
     applyVolume()
     for (const n of ['pop', 'drop', 'coin', 'angry', 'unlock', 'rush', 'end', 'click']) this.load(n)
     this.load('market').then(() => this.startMusic())
-    this.load('crowd').then(() => this.startLoop('crowd')); this.load('sear')
+    this.load('sear') // no noise loops at all (11-14 user: a steady rustle under the effects, twice)
   },
   async load(name) {
-    try { this.buffers[name] = await this.ctx.decodeAudioData(await (await fetch(`audio/${name}.ogg`)).arrayBuffer()) } catch (error) { console.warn('sound', name, error) }
+    try { this.buffers[name] = await this.ctx.decodeAudioData(await (await fetch(`audio/${name}.ogg?v=${AUDIO_V}`)).arrayBuffer()) } catch (error) { console.warn('sound', name, error) }
   },
   play(name, vol = 1) {
     if (!this.ctx || !this.buffers[name]) return
