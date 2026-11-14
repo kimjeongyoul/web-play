@@ -4,7 +4,8 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR } from './strings.js?v=404cea4'
+import { STR, CITY } from './strings.js?v=f5de1b0'
+const city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
 const SPEED = Math.max(1, Math.min(10, Math.round(+Q.get('speed') || 1))) // tests: run faster
@@ -280,6 +281,25 @@ function neon(text, color, w = 3.2) {
   })
   return mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }))
 }
+// an old-style shop board: cream panel, thick red letters, dark frame with rivets; the translation hangs below
+function shopSign(native, local, accent, w) {
+  const showLocal = lang !== city.lang
+  const { tex } = canvasTex(512, 256, (g, W) => {
+    g.fillStyle = '#3a2a1e'; g.beginPath(); g.roundRect(6, 6, W - 12, 150, 10); g.fill()
+    g.fillStyle = '#f4ead2'; g.fillRect(20, 20, W - 40, 122)
+    g.fillStyle = accent; g.fillRect(20, 20, W - 40, 10); g.fillRect(20, 132, W - 40, 10)
+    g.fillStyle = '#6a5a4a'; for (const x of [32, W - 32]) for (const y of [36, 126]) { g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill() }
+    g.font = `900 92px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'
+    g.lineWidth = 8; g.strokeStyle = '#1d3f8a'; g.strokeText(native, W / 2, 84, W - 90)
+    g.fillStyle = '#d8261e'; g.fillText(native, W / 2, 84, W - 90)
+    if (showLocal) {
+      g.font = `800 40px ${FONT}`; const tw = Math.min(W - 40, g.measureText(local).width + 36)
+      g.fillStyle = 'rgba(20,14,40,.85)'; g.beginPath(); g.roundRect(W / 2 - tw / 2, 176, tw, 60, 14); g.fill()
+      g.fillStyle = '#fff'; g.fillText(local, W / 2, 207, W - 60)
+    }
+  })
+  return mesh(new THREE.PlaneGeometry(w, w / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }))
+}
 const steamTex = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,.75)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64) }).tex
 const ROWS = [{ grill: -11.2, disp: -5.2 }, { grill: 1.4, disp: 7.0 }]
 const stalls = [
@@ -297,7 +317,7 @@ for (const s of stalls) {
   const roofZ = R.grill - 0.2
   const awn = box(4.6, 0.08, 1.3, tentMat, s.x + side * 1.0, 2.45, roofZ, s.root); awn.rotation.x = 0.2
   for (const dx of [-2.2, 2.2]) cyl(0.05, 0.05, 2.4, 0x8a8f99, s.x + side * 1.0 + dx, 1.2, R.grill - 0.75, s.root, 6)
-  s.sign = neon(t(s.name), s.neon, 2.4); s.sign.position.set(s.grill.x, 3.0, R.grill - 0.9); s.root.add(s.sign)
+  s.sign = shopSign(city[s.name], t(s.name), s.neon, 2.6); s.sign.position.set(s.grill.x, 3.35, R.grill - 0.9); s.root.add(s.sign)
   box(1.0, 0.7, 1.0, 0x9a6a3d, s.crate.x, 0.35, s.crate.z, s.root); s.boxes.push(block(s.crate.x, s.crate.z, 1.0, 1.0))
   s.crateStack = new THREE.Group(); s.crateStack.position.set(s.crate.x, 0.72, s.crate.z); s.root.add(s.crateStack); setStack(s.crateStack, Array(4).fill(`raw${s.id}`))
   box(2.0, 0.85, 1.2, 0x5c5f73, s.grill.x, 0.43, s.grill.z, s.root); s.boxes.push(block(s.grill.x, s.grill.z, 2.0, 1.2))
@@ -328,7 +348,7 @@ const cashPad = addPad('cash', -1, CASH.x, CASH.z - 1.45, 0xffd23f)
 const arch = new THREE.Group(); arch.visible = false; scene.add(arch)
 for (const x of [-5.6, 5.6]) cyl(0.18, 0.18, 5.2, 0xc0392b, x, 2.6, -7.6, arch, 8)
 box(11.6, 0.9, 0.4, 0x8a1f1f, 0, 5.3, -7.6, arch)
-const archSign = neon(t('title'), '#ffd23f', 7); archSign.position.set(0, 5.35, -7.36); arch.add(archSign)
+const archSign = neon(city.gate, '#ffd23f', 7); archSign.position.set(0, 5.35, -7.36); arch.add(archSign)
 
 // money spots: one at a time, in STEPS order
 const buyC = canvasTex(256, 256, () => {})
@@ -764,7 +784,7 @@ function updateCamera(dt, snap) {
   if (game.phase === 'play') {
     const d = wide ? 15.5 : Math.max(15, 7.6 / (2 * tan * aspect))
     const tx = wide ? 0 : clamp(player.x * 0.7, -2.2, 2.2)
-    const tz = wide ? clamp(player.z - 2, -8, 15) : clamp(player.z - 1.2, -9, 17)
+    const tz = wide ? clamp(player.z, -7, 17) : clamp(player.z - 1.2, -9, 17)
     camAt.x += (tx - camAt.x) * k; camAt.z += (tz - camAt.z) * k
     camPos.set(camAt.x, d * (wide ? 0.7 : 0.84), camAt.z + d * (wide ? 0.72 : 0.54)); look.set(camAt.x, 0, camAt.z - 0.5)
     camera.position.copy(camPos)

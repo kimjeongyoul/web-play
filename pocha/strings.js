@@ -1,4 +1,9 @@
 // Screen text. Code never holds Korean; add a language by adding a block.
+// Signs over the stalls are always in the city's own language (Seoul: old-style Korean shop boards); the player's
+// language shows on a small plate under each sign, hidden when it is the same language.
+export const CITY = {
+  seoul: { lang: 'ko', fish: '붕어빵', oden: '어묵', tteok: '떡볶이', hotteok: '호떡', gate: '백호 야시장' },
+}
 export const STR = {
   en: {
     title: 'Baekho Pocha', sub: 'Seoul night market', start: 'Open the stall',
