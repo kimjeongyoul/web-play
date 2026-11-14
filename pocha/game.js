@@ -4,7 +4,7 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, LANGUAGES } from './strings.js?v=98c56f8'
+import { STR, CITY, LANGUAGES } from './strings.js?v=8fca9c5'
 const city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
@@ -811,7 +811,7 @@ function updateSparks(dt) {
 
 // ---------------------------------------------------------------- save (Playgama storage and this device; the newer one wins)
 const SAVE_KEY = 'baekho_pocha'
-const save = { at: 0, runs: 0, clears: 0, bestTime: 0, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
+const save = { at: 0, runs: 0, clears: 0, bestTime: 0, bestServed: 0, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
 let saveReady = false, saveTimer = 0
 function writeSave() {
   if (!saveReady) return // never write defaults over a save that has not been read yet
@@ -833,7 +833,7 @@ async function readSave() {
   }
   const best = [local, remote].filter(Boolean).sort((a, b) => (+b.at || 0) - (+a.at || 0))[0]
   if (best) {
-    for (const k of ['at', 'runs', 'clears', 'bestTime', 'music', 'sfx', 'shake']) if (best[k] != null && Number.isFinite(+best[k])) save[k] = +best[k]
+    for (const k of ['at', 'runs', 'clears', 'bestTime', 'bestServed', 'music', 'sfx', 'shake']) if (best[k] != null && Number.isFinite(+best[k])) save[k] = +best[k]
     save.music = clamp(save.music, 0, 1); save.sfx = clamp(save.sfx, 0, 1); save.lang = pickLang(best.lang)
   }
   saveReady = true
@@ -1004,19 +1004,22 @@ function clearCity() {
   bannerShow(t('clear'), 3)
   input.x = input.z = 0; input.id = null; $('stick').classList.add('hide')
   const secs = Math.round(game.time), newBest = !save.bestTime || secs < save.bestTime
-  save.clears++; if (newBest) save.bestTime = secs
+  const run = { time: game.time, earned: game.earned, served: game.served, lost: game.lost }
+  const moreServed = run.served > (save.bestServed || 0)
+  save.clears++; if (newBest) save.bestTime = secs; if (moreServed) save.bestServed = run.served
   writeSave()
   platform.message('gameplay_stopped'); platform.track('city_clear', { city: 'seoul', secs, earned: game.earned, lost: game.lost })
   setTimeout(() => {
     $('endTitle').textContent = t('clear')
-    for (const [k, v] of [['time', mmss(game.time)], ['earned', '₩' + game.earned], ['served', game.served], ['lost', game.lost]]) { $(k + 'Lbl').textContent = t(k); $(k + 'Txt').textContent = v }
-    $('newBest').textContent = newBest ? t('newBest') : `${t('best')} ${mmss(save.bestTime)}`
-    $('newBest').classList.remove('hide'); $('newBest').classList.toggle('dim', !newBest)
-    $('nextCityLbl').textContent = t('nextCity'); $('nextCityTxt').textContent = t('tokyo'); $('lock').classList.remove('open')
-    $('postFrom').textContent = t('postcard'); $('postMark').textContent = city.stamp; $('ticketRoute').textContent = `${city.code} ✈ TYO`
+    for (const [k, v] of [['time', mmss(run.time)], ['earned', '₩' + run.earned], ['served', run.served], ['lost', run.lost]]) { $(k + 'Lbl').textContent = t(k); $(k + 'Txt').textContent = v }
+    // records: this run against the best so far (no locked next city: it is not in the game yet)
+    $('newBest').textContent = t('newBest'); $('newBest').classList.toggle('hide', !(newBest || moreServed))
+    $('recTimeLbl').textContent = t('best'); $('recTimeTxt').textContent = mmss(save.bestTime); $('recTimeNew').textContent = newBest ? 'NEW' : ''
+    $('recServedLbl').textContent = t('mostServed'); $('recServedTxt').textContent = save.bestServed; $('recServedNew').textContent = moreServed ? 'NEW' : ''
+    $('postFrom').textContent = t('postcard'); $('postMark').textContent = city.stamp
     $('end').classList.remove('hide'); $('hud').classList.add('hide'); $('offerBtn').classList.add('hide'); $('map').classList.add('hide')
     game.phase = 'end'
-    setTimeout(() => { $('lock').classList.add('open'); sfx('unlock') }, 900)
+    if (newBest || moreServed) setTimeout(() => sfx('unlock'), 900)
   }, Q.has('fast') ? 0 : 3200) // ?fast: tests skip the fireworks wait
 }
 function goTitle() {
@@ -1121,10 +1124,15 @@ function updateCamera(dt, snap) {
   const aspect = camera.aspect, tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), wide = aspect >= 1
   const k = snap ? 1 : 1 - Math.exp(-dt * 2.2)
   if (game.phase === 'play') {
-    const d = wide ? 15.5 : 20
-    const gt = guideTarget(), ax = gt ? player.x + (gt.x - player.x) * 0.35 : player.x, az = gt ? player.z + (gt.z - player.z) * 0.35 : player.z
-    const tx = wide ? 0 : clamp(ax * 0.6, -2.2, 2.2)
-    const tz = wide ? clamp(player.z, -7, 17) : clamp(az - 1.4, -10, 16)
+    const d = wide ? 15.5 : 20, h = d * 0.7, zoff = d * (wide ? 0.72 : 0.74)
+    // where the bottom screen edge meets the ground, relative to camAt (11-14 user: walking down left Baekho off screen)
+    const half = THREE.MathUtils.degToRad(camera.fov / 2), bottom = zoff - h / Math.tan(Math.atan2(h, zoff + 0.5) + half)
+    // the next spot pulls the view a little (at most 2 m), so Baekho always stays near the middle
+    const gt = guideTarget(), ax = player.x + (gt ? clamp((gt.x - player.x) * 0.35, -1, 1) : 0), az = player.z + (gt ? clamp((gt.z - player.z) * 0.35, -2, 2) : 0)
+    const tx = wide ? 0 : clamp(ax, -3.6, 3.6) // portrait is narrow: follow Baekho sideways too
+    // never past the street's bottom end (no empty ground below), never so far that Baekho leaves the screen
+    let tz = clamp(wide ? az : az - 1.4, -10, Z1 + 2.5 - bottom)
+    tz = clamp(tz, player.z + 3 - bottom, player.z + 4)
     camAt.x += (tx - camAt.x) * k; camAt.z += (tz - camAt.z) * k
     camPos.set(camAt.x, d * (wide ? 0.7 : 0.7), camAt.z + d * (wide ? 0.72 : 0.74)); look.set(camAt.x, 0, camAt.z - 0.5)
     camera.position.copy(camPos)
@@ -1240,4 +1248,4 @@ requestAnimationFrame(frame)
   window.__ready = true
 })()
 
-if (Q.has('debug')) window.__gt = { scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, stalls, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, STEPS, findPath, camera }
+if (Q.has('debug')) window.__gt = { RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, stalls, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, STEPS, findPath, camera }
