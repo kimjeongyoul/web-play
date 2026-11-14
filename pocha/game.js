@@ -193,8 +193,8 @@ function animate(rig, moving, dt, carrying) {
 
 // ---------------------------------------------------------------- food and items
 const ITEM = {
-  raw0: () => { const g = new THREE.Group(); cyl(0.17, 0.13, 0.12, 0xf3ead2, 0, 0.06, 0, g, 10); cyl(0.14, 0.14, 0.02, 0xe8c27a, 0, 0.12, 0, g, 10); return g },
-  food0: () => { const g = new THREE.Group(); const b = sph(0.2, 0xd8922c, 0, 0.07, 0, g, 10, 6); b.scale.set(1, 0.42, 0.62); const tl = mesh(new THREE.ConeGeometry(0.09, 0.14, 4), mat(0xc07a1e), 0.24, 0.07, 0, g); tl.rotation.z = Math.PI / 2; sph(0.025, 0x5a3010, -0.11, 0.11, 0.06, g, 5, 4); return g },
+  raw0: () => { const g = new THREE.Group(); cyl(0.17, 0.12, 0.12, 0xb9bec8, 0, 0.06, 0, g, 10); cyl(0.15, 0.15, 0.02, 0xf6ecd0, 0, 0.12, 0, g, 10); const w = cyl(0.012, 0.012, 0.26, 0x8a8f99, 0.05, 0.2, 0, g, 4); w.rotation.z = -0.5; return g }, // batter bowl
+  food0: () => { const g = new THREE.Group(); const b = sph(0.2, 0xb8701f, 0, 0.07, 0, g, 10, 6); b.scale.set(1, 0.42, 0.62); const tl = mesh(new THREE.ConeGeometry(0.1, 0.15, 3), mat(0xa35f17), 0.24, 0.07, 0, g); tl.rotation.z = Math.PI / 2; for (const x of [-0.06, 0.05]) { const r = box(0.025, 0.03, 0.18, 0x8a4b10, x, 0.13, 0, g); r.rotation.x = 0 } sph(0.05, 0x6b2a2a, -0.13, 0.12, 0, g, 6, 4); return g }, // bungeoppang: bread, ridges, red bean peeking
   raw1: () => { const g = new THREE.Group(); box(0.32, 0.07, 0.22, 0xf0d39a, 0, 0.04, 0, g); box(0.32, 0.05, 0.22, 0xe6c07e, 0, 0.1, 0, g); return g },
   food1: () => { const g = new THREE.Group(); const st = cyl(0.015, 0.015, 0.5, 0xc8a26b, 0, 0.06, 0, g, 5); st.rotation.z = Math.PI / 2; for (const x of [-0.1, 0.06]) { const p = box(0.13, 0.05, 0.16, 0xe8b96a, x, 0.07, 0, g); p.rotation.x = 0.25 }; return g },
 }
@@ -354,10 +354,19 @@ function bubbleTex(icon, ring) {
   return canvasTex(128, 128, (g) => {
     g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 58, 50, 0, Math.PI * 2); g.fill(); g.beginPath(); g.moveTo(52, 100); g.lineTo(64, 124); g.lineTo(76, 100); g.fill()
     if (ring) { g.lineWidth = 8; g.strokeStyle = ring; g.beginPath(); g.arc(64, 58, 46, 0, Math.PI * 2); g.stroke() }
-    g.font = '58px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, 64, 62)
+    g.font = '58px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; if (typeof icon === 'function') { g.save(); g.translate(4, -2); icon(g); g.restore() } else g.fillText(icon, 64, 62)
   }).tex
 }
-const BUB = { want0: bubbleTex('🐟'), want1: bubbleTex('🍢'), angry: bubbleTex('💢'), happy: bubbleTex('❤️'), pay: bubbleTex('💰'), sleep: bubbleTex('💤') }
+// bungeoppang drawn as bread (an emoji fish read as a real fish, 11-14 user)
+function breadIcon(g) {
+  g.save(); g.translate(60, 60)
+  g.fillStyle = '#a35f17'; g.beginPath(); g.moveTo(26, 0); g.lineTo(46, -16); g.lineTo(44, 16); g.closePath(); g.fill()
+  g.fillStyle = '#c47a22'; g.beginPath(); g.ellipse(-4, 0, 34, 22, 0, 0, Math.PI * 2); g.fill()
+  g.strokeStyle = '#7a3e0c'; g.lineWidth = 3; for (const x of [-14, -2, 10]) { g.beginPath(); g.arc(x, 0, 12, -1, 1); g.stroke() }
+  g.fillStyle = '#5a1f1f'; g.beginPath(); g.arc(-24, -6, 4, 0, Math.PI * 2); g.fill()
+  g.restore()
+}
+const BUB = { want0: bubbleTex(breadIcon), want1: bubbleTex('🍢'), angry: bubbleTex('💢'), happy: bubbleTex('❤️'), pay: bubbleTex('💰'), sleep: bubbleTex('💤') }
 function setBubble(w, key) {
   if (!w.bubble) { w.bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: BUB[key], depthTest: false })); w.bubble.scale.set(0.75, 0.75, 1); w.bubble.renderOrder = 5; scene.add(w.bubble) }
   w.bubble.visible = !!key; if (key) w.bubble.material.map = BUB[key]; w.bubbleKey = key
@@ -590,6 +599,7 @@ function startGame() {
   Object.assign(game, { phase: 'play', time: 0, money: 0, earned: 0, served: 0, lost: 0, rush: false, spawnT: 1.2, rushShown: false })
   Object.assign(player, { x: 0, z: -1.5, items: [], face: Math.PI })
   $('title').classList.add('hide'); $('end').classList.add('hide'); $('hud').classList.remove('hide')
+  guardBack(true)
   $('hint').textContent = t('hint'); $('hint').classList.add('on'); setTimeout(() => $('hint').classList.remove('on'), 4500)
 }
 function endGame() {
@@ -604,6 +614,12 @@ $('startBtn').addEventListener('click', startGame)
 $('againBtn').addEventListener('click', startGame)
 
 // ---------------------------------------------------------------- input: drag anywhere = stick
+// Phones: an edge swipe went back a page mid-shift (11-14 user). Block the default of every touch on the game, and while a
+// shift runs keep one extra history entry so a back gesture that still slips through lands on the same page.
+for (const ev of ['touchstart', 'touchmove']) document.addEventListener(ev, (e) => { if (!e.target.closest?.('button')) e.preventDefault() }, { passive: false })
+let guard = false
+function guardBack(on) { if (on && !guard) { guard = true; try { history.pushState({ pocha: 1 }, '') } catch {} } }
+addEventListener('popstate', () => { if (game.phase === 'play') { try { history.pushState({ pocha: 1 }, '') } catch {} } else guard = false })
 canvas.addEventListener('pointerdown', (e) => {
   unlockAudio(); if (game.phase !== 'play') return
   input.id = e.pointerId; input.ox = e.clientX; input.oy = e.clientY; input.x = input.z = 0
