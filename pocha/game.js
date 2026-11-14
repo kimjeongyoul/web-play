@@ -4,14 +4,16 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY } from './strings.js?v=f5de1b0'
+import { STR, CITY, LANGUAGES } from './strings.js?v=98c56f8'
 const city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
 const SPEED = Math.max(1, Math.min(10, Math.round(+Q.get('speed') || 1))) // tests: run faster
-const lang = (Q.get('lang') || navigator.language || 'en').slice(0, 2) === 'ko' ? 'ko' : 'en'
+const LANG_KEYS = Object.keys(LANGUAGES)
+const pickLang = (code) => { const c = String(code || '').slice(0, 2).toLowerCase(); return LANG_KEYS.includes(c) ? c : '' }
+let lang = pickLang(Q.get('lang')) || pickLang(navigator.language) || 'en'
 const t = (k) => STR[lang][k] ?? STR.en[k]
-const talkLines = (k) => STR[lang].talk?.[k] || STR.en.talk[k]
+const talkLines = (k) => STR[lang].talk?.[k] || STR[lang][k] || STR.en.talk[k] || STR.en[k]
 const $ = (id) => document.getElementById(id)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const rnd = (a, b) => a + Math.random() * (b - a)
@@ -40,7 +42,7 @@ const SKY = new THREE.Color(0x141a3a)
 scene.background = SKY.clone()
 scene.fog = new THREE.Fog(0x141a3a, 40, 140)
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 300)
-const hemi = new THREE.HemisphereLight(0x8a96ff, 0x3a2438, 1.6); scene.add(hemi)
+const hemi = new THREE.HemisphereLight(0xa8b0ff, 0x6a4030, 2.3); scene.add(hemi)
 const moon = new THREE.DirectionalLight(0xb8c0ff, 1.1); moon.position.set(-6, 14, 9); scene.add(moon)
 
 const mats = new Map()
@@ -48,9 +50,13 @@ const mat = (c, e = 0) => { const k = c + ':' + e; if (!mats.has(k)) mats.set(k,
 const basic = (c) => new THREE.MeshBasicMaterial({ color: c })
 function mesh(geo, m, x = 0, y = 0, z = 0, parent = scene) { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); parent.add(o); return o }
 const M = (c) => (typeof c === 'number' ? mat(c) : c)
-const box = (w, h, d, c, x, y, z, p) => mesh(new THREE.BoxGeometry(w, h, d), M(c), x, y, z, p)
-const cyl = (r1, r2, h, c, x, y, z, p, seg = 8) => mesh(new THREE.CylinderGeometry(r1, r2, h, seg), M(c), x, y, z, p)
-const sph = (r, c, x, y, z, p, ws = 10, hs = 8) => mesh(new THREE.SphereGeometry(r, ws, hs), M(c), x, y, z, p)
+// shapes are cached by size: people, helpers and food are made again every customer and every run, and new geometry each
+// time grew GPU memory run after run (RELEASE_GATE MEM)
+const GEO = new Map()
+const geo = (key, make) => { let g = GEO.get(key); if (!g) { g = make(); GEO.set(key, g) } return g }
+const box = (w, h, d, c, x, y, z, p) => mesh(geo(`b${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d)), M(c), x, y, z, p)
+const cyl = (r1, r2, h, c, x, y, z, p, seg = 8) => mesh(geo(`c${r1},${r2},${h},${seg}`, () => new THREE.CylinderGeometry(r1, r2, h, seg)), M(c), x, y, z, p)
+const sph = (r, c, x, y, z, p, ws = 10, hs = 8) => mesh(geo(`s${r},${ws},${hs}`, () => new THREE.SphereGeometry(r, ws, hs)), M(c), x, y, z, p)
 function canvasTex(w, h, draw) {
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h
   const g = cv.getContext('2d'); draw(g, w, h)
@@ -61,7 +67,7 @@ const FONT = 'system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif'
 
 // ---------------------------------------------------------------- the street (z from -13 at the back to 22 at the entrance)
 const Z0 = -13.4, Z1 = 22.5, XW = 5.9
-const ground = mesh(new THREE.PlaneGeometry(60, 90), mat(0x2c2b3d), 0, 0, 5); ground.rotation.x = -Math.PI / 2
+const ground = mesh(new THREE.PlaneGeometry(60, 90), mat(0x3e3546), 0, 0, 5); ground.rotation.x = -Math.PI / 2
 for (let z = -14; z <= 24; z += 2) { const l = mesh(new THREE.PlaneGeometry(12.4, 0.06), basic(0x3a3950), 0, 0.005, z); l.rotation.x = -Math.PI / 2 }
 for (const x of [-6.35, 6.35]) box(0.3, 0.18, 40, 0x55536a, x, 0.09, 5)
 // buildings sized for people: shops on the ground floor, lit windows above; few of them so phones stay fast
@@ -105,6 +111,84 @@ const tower = namsan()
 // a few far towers so the skyline reads as Seoul at night
 for (const [x, z, h] of [[-30, -80, 34], [-14, -88, 24], [34, -84, 40], [-44, -70, 18]]) { box(7, h, 7, 0x24284a, x, h / 2, z); for (let k = 0; k < h / 3; k++) if (Math.random() < 0.7) box(5, 0.4, 0.1, basic(0xffd98a), x, 2 + k * 3, z + 3.56) }
 
+// warm pools of light on the street (painted, not real lights, so phones stay fast)
+const glowTex = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, 'rgba(255,196,110,.62)'); r.addColorStop(0.55, 'rgba(255,160,80,.22)'); r.addColorStop(1, 'rgba(255,140,60,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128) }).tex
+const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false })
+const glow = (x, z, r) => { const m = mesh(geo('glow', () => new THREE.PlaneGeometry(1, 1)), glowMat, x, 0.011, z); m.rotation.x = -Math.PI / 2; m.scale.set(r * 2, r * 2, 1); return m }
+for (const z of [-9, -3, 3, 9, 15]) for (const x of [-3.2, 0, 3.2]) glow(x, z, 2.6)
+// street furniture on the sides: plastic tables and stools, beer crates, lamp posts (outside the walking area)
+const sideBlocks = []
+const stoolCols = [0xe8412f, 0x2f7de8, 0xe8412f, 0x35b36b]
+for (const [x, z, n] of [[-5.3, -1.6, 0], [5.3, -1.2, 1], [-5.3, 10.4, 2], [5.3, 10.8, 3], [-5.3, 17.5, 1], [5.3, 18.2, 0]]) {
+  cyl(0.42, 0.42, 0.06, stoolCols[n], x, 0.7, z, scene, 12); cyl(0.06, 0.06, 0.68, 0x9a9aa8, x, 0.35, z, scene, 6)
+  for (const dz of [-0.75, 0.75]) { cyl(0.2, 0.17, 0.42, stoolCols[(n + 1) % 4], x, 0.21, z + dz, scene, 10) }
+  if (n % 2) { box(0.22, 0.32, 0.22, 0x2a8a3a, x + 0.12, 0.89, z + 0.1); box(0.1, 0.1, 0.1, 0xffffff, x - 0.12, 0.78, z - 0.12) }
+  else { cyl(0.16, 0.16, 0.06, 0xfaf3e6, x, 0.76, z, scene, 10); cyl(0.12, 0.12, 0.04, 0xd8341e, x, 0.8, z, scene, 10) }
+  // a paper cup of eomuk skewers
+  cyl(0.08, 0.06, 0.18, 0xffffff, x - 0.05, 0.82, z + 0.45, scene, 8)
+  for (const [dx, r] of [[-0.02, 0.15], [0.02, -0.12], [0, 0.02]]) { const st = cyl(0.012, 0.012, 0.42, 0xc8a26b, x - 0.05 + dx, 0.98, z + 0.45, scene, 4); st.rotation.z = r }
+  sideBlocks.push([x, z, 0.9, 2.1])
+}
+for (const [x, z] of [[-5.4, 5.6], [5.4, 5.2], [-5.4, 22.5], [5.4, 21.6]]) { box(0.6, 0.45, 0.45, 0x2a8a3a, x, 0.23, z); box(0.6, 0.45, 0.45, 0xffb000, x, 0.68, z, scene); sideBlocks.push([x, z, 0.6, 0.45]) }
+for (const [x, z] of [[-6.15, -7], [6.15, 3.5], [-6.15, 13.5], [6.15, 20]]) {
+  cyl(0.07, 0.09, 3.6, 0x30303c, x, 1.8, z, scene, 6); const arm = box(0.9, 0.06, 0.06, 0x30303c, x - Math.sign(x) * 0.42, 3.55, z)
+  sph(0.2, basic(0xffe2a0), x - Math.sign(x) * 0.85, 3.4, z, scene, 8, 6); glow(x - Math.sign(x) * 1.2, z, 2.2)
+}
+
+// ---------------------------------------------------------------- Seoul street dressing (11-14 user "그 나라 여행 간 느낌")
+// vertical Hangul neon boards sticking out of the buildings (plain shop words, no brands), utility poles with sagging wires,
+// flyers on the walls, a delivery scooter, paper cups of skewers on the tables. City data: strings.js CITY.seoul.boards.
+function vSign(text, bg, fg, x, y, z) {
+  const n = [...text].length
+  const { tex } = canvasTex(96, 64 + n * 84, (g, W, H) => {
+    g.fillStyle = bg; g.beginPath(); g.roundRect(4, 4, W - 8, H - 8, 10); g.fill()
+    g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 4; g.beginPath(); g.roundRect(10, 10, W - 20, H - 20, 8); g.stroke()
+    g.fillStyle = fg; g.font = `900 70px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'
+    ;[...text].forEach((ch, i) => g.fillText(ch, W / 2, 32 + 42 + i * 84))
+  })
+  const h = 0.55 * (64 + n * 84) / 96
+  const m = mesh(new THREE.PlaneGeometry(0.55, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }), x, y, z)
+  box(0.04, 0.04, 0.5, 0x30303c, x, y + h / 2 - 0.1, z - 0.25); box(0.04, 0.04, 0.5, 0x30303c, x, y - h / 2 + 0.1, z - 0.25)
+  return m
+}
+const BOARD_COLS = [['#d8261e', '#fff6d0'], ['#1d3f8a', '#ffe14a'], ['#ffd23f', '#c0161b'], ['#1b8a4a', '#ffffff'], ['#ff5d8f', '#ffffff'], ['#6a2fb8', '#7fe3ff']]
+city.boards.forEach((w, i) => {
+  const side = i % 2 ? 1 : -1, z = -10 + Math.floor(i / 2) * 5.6 + (side > 0 ? 2.4 : 0), [bg, fg] = BOARD_COLS[i % BOARD_COLS.length]
+  vSign(w, bg, fg, side * 6.25, 4.2 + (i % 3) * 0.5, z)
+})
+// utility poles with crossarms, wires sagging between them and across the street
+const poleTops = []
+for (const [x, z] of [[-6.05, -4.5], [6.05, -0.5], [-6.05, 8.6], [6.05, 12.4], [-6.05, 19.8]]) {
+  cyl(0.11, 0.14, 6.4, 0x8a8478, x, 3.2, z, scene, 7)
+  box(1.3, 0.1, 0.1, 0x6a645a, x, 5.9, z); box(1.0, 0.1, 0.1, 0x6a645a, x, 5.4, z)
+  cyl(0.18, 0.18, 0.5, 0x5a5f6a, x - Math.sign(x) * 0.25, 4.9, z, scene, 8)
+  poleTops.push({ x, z })
+}
+const wireMat = new THREE.LineBasicMaterial({ color: 0x0c0c12 })
+function wire(a, b, sag, dy = 0) {
+  const pts = []
+  for (let i = 0; i <= 16; i++) { const u = i / 16; pts.push(new THREE.Vector3(a.x + (b.x - a.x) * u, 5.85 + dy - Math.sin(Math.PI * u) * sag, a.z + (b.z - a.z) * u)) }
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat))
+}
+for (let i = 0; i < poleTops.length - 1; i++) for (const [s, dy] of [[0.5, 0], [0.8, -0.45], [0.35, 0.05]]) wire(poleTops[i], poleTops[i + 1], s, dy)
+for (const p of poleTops) wire(p, { x: -p.x * 1.4, z: p.z + 1.5 }, 0.9, -0.2)
+// flyers on the walls next to the street
+const flyerTex = [['#ffffff', '#d8261e'], ['#ffe14a', '#1d3f8a'], ['#7fe3ff', '#1b1530'], ['#ffb0c8', '#6a2fb8']].map(([bg, fg]) => canvasTex(64, 90, (g) => { g.fillStyle = bg; g.fillRect(0, 0, 64, 90); g.fillStyle = fg; g.fillRect(6, 8, 52, 18); for (let k = 0; k < 5; k++) g.fillRect(8, 34 + k * 10, 30 + ((k * 13) % 18), 4) }).tex)
+for (let k = 0; k < 18; k++) {
+  const side = k % 2 ? 1 : -1, z = -11 + k * 1.9 + rnd(-0.3, 0.3)
+  const f = mesh(geo('flyer', () => new THREE.PlaneGeometry(0.42, 0.6)), new THREE.MeshBasicMaterial({ map: flyerTex[k % 4] }), side * 6.58, rnd(1.0, 1.9), z)
+  f.rotation.y = -side * Math.PI / 2; f.rotation.z = rnd(-0.12, 0.12)
+}
+// a delivery scooter parked at the side, box on the back
+{
+  const g = new THREE.Group(); g.position.set(-5.3, 0, 7.4); g.rotation.y = 0.15; scene.add(g)
+  for (const z of [-0.55, 0.55]) { const w = cyl(0.26, 0.26, 0.12, 0x15151c, 0, 0.26, z, g, 12); w.rotation.z = Math.PI / 2 }
+  box(0.36, 0.3, 1.0, 0xd8261e, 0, 0.5, 0, g); box(0.3, 0.12, 0.5, 0x1d1b26, 0, 0.72, 0.15, g)
+  const col = box(0.08, 0.7, 0.08, 0x9a9aa8, 0, 0.85, -0.5, g); col.rotation.x = -0.3
+  box(0.7, 0.05, 0.05, 0x1d1b26, 0, 1.18, -0.6, g); box(0.56, 0.48, 0.5, 0xfff2d0, 0, 1.03, 0.45, g); box(0.5, 0.1, 0.02, 0xd8261e, 0, 1.1, 0.71, g)
+  sideBlocks.push([-5.3, 7.4, 0.6, 1.4])
+}
+
 // string lights across the street
 const bulbGeo = new THREE.SphereGeometry(0.11, 8, 6), bulbCols = [0xffd36b, 0xff7aa8, 0x7fe3ff, 0xffb35c], bulbs = []
 for (const z of [-9, -3, 3, 9, 15]) {
@@ -117,6 +201,7 @@ for (const z of [-9, -3, 3, 9, 15]) {
 // ---------------------------------------------------------------- obstacles + grid pathfinding (helpers and customers)
 const boxes = []
 const block = (x, z, w, d) => { const b = { x0: x - w / 2, z0: z - d / 2, x1: x + w / 2, z1: z + d / 2 }; boxes.push(b); return b }
+for (const b of sideBlocks) block(...b)
 const GX0 = -6, GZ0 = -14, CS = 0.5, GW = 24, GH = 76
 let grid = new Uint8Array(GW * GH)
 function buildGrid() {
@@ -181,12 +266,13 @@ function limbs(g, c, hip, shoulder, w) {
   const arms = [-1, 1].map((s) => { const p = new THREE.Group(); p.position.set(s * w, shoulder, 0); g.add(p); mesh(armGeo, m, 0, 0, 0, p); return p })
   return { legs, arms }
 }
-function shadow(g, r = 0.42) { const s = mesh(new THREE.CircleGeometry(r, 16), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.35, depthWrite: false }), 0, 0.02, 0, g); s.rotation.x = -Math.PI / 2 }
+const shadowMat = new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.35, depthWrite: false })
+function shadow(g, r = 0.42) { const s = mesh(geo('o' + r, () => new THREE.CircleGeometry(r, 16)), shadowMat, 0, 0.02, 0, g); s.rotation.x = -Math.PI / 2 }
 // Baekho: white round head, two ears, three forehead stripes, stick body. Helpers: orange cubs with role aprons and hats.
 const APRON = { cash: 0xffd23f, carry: 0x3a7bd5, cook: 0xe0402e }
 function makeTiger(role = null) {
   const baby = !!role, g = new THREE.Group(), s = baby ? 0.78 : 1, ink = 0x1d1b26
-  const fur = mat(baby ? 0xffa23a : 0xfaf8f2, baby ? 0x3a1a00 : 0x6a6a72)
+  const fur = mat(baby ? 0xffa23a : 0xffffff, baby ? 0x5a2a00 : 0xa8a4b4)
   const inner = new THREE.Group(); inner.scale.setScalar(s); g.add(inner)
   cyl(0.075, 0.075, 0.6, fur, 0, 0.98, 0, inner)
   if (baby) box(0.34, 0.38, 0.06, APRON[role], 0, 0.92, 0.09, inner)
@@ -199,6 +285,13 @@ function makeTiger(role = null) {
   for (const x of [-0.12, 0.12]) sph(0.045, ink, x, 1.52, 0.3, inner, 6, 5)
   sph(0.04, 0xff8fa8, 0, 1.44, 0.32, inner, 6, 5)
   if (baby) for (const x of [-0.26, 0.26]) { const st = box(0.03, 0.12, 0.08, ink, x, 1.55, 0.05, inner); st.rotation.z = x > 0 ? -0.4 : 0.4 }
+  if (!baby) {
+    // Baekho: black cheek stripes, a stripy body (a wider white body so the stripes read), a pink scarf
+    for (const sx of [-1, 1]) for (const dy of [0.04, -0.06]) { const st = box(0.16, 0.035, 0.05, ink, sx * 0.3, 1.5 + dy, 0.12, inner); st.rotation.z = sx * 0.25; st.rotation.y = sx * -0.5 }
+    cyl(0.17, 0.2, 0.56, fur, 0, 0.98, 0, inner, 10)
+    for (const y of [0.82, 0.98, 1.14]) { const st = box(0.36, 0.045, 0.06, ink, 0, y, 0.17, inner); st.rotation.z = 0.15 }
+    cyl(0.2, 0.2, 0.09, 0xff4d7a, 0, 1.24, 0, inner, 12)
+  }
   const l = limbs(inner, fur, 0.68, 1.2, 0.13)
   shadow(g, 0.4 * s)
   const stack = new THREE.Group(); stack.position.set(0, 0.95 * s, 0.42 * s); g.add(stack)
@@ -228,7 +321,7 @@ function animate(rig, moving, dt, carrying) {
 // ---------------------------------------------------------------- food: raw goods and cooked food for the four stalls
 const ITEM = {
   raw0: () => { const g = new THREE.Group(); cyl(0.17, 0.12, 0.12, 0xb9bec8, 0, 0.06, 0, g, 10); cyl(0.15, 0.15, 0.02, 0xf6ecd0, 0, 0.12, 0, g, 10); const w = cyl(0.012, 0.012, 0.26, 0x8a8f99, 0.05, 0.2, 0, g, 4); w.rotation.z = -0.5; return g }, // batter bowl
-  food0: () => { const g = new THREE.Group(); const b = sph(0.2, 0xb8701f, 0, 0.07, 0, g, 10, 6); b.scale.set(1, 0.42, 0.62); const tl = mesh(new THREE.ConeGeometry(0.1, 0.15, 3), mat(0xa35f17), 0.24, 0.07, 0, g); tl.rotation.z = Math.PI / 2; for (const x of [-0.06, 0.05]) box(0.025, 0.03, 0.18, 0x8a4b10, x, 0.13, 0, g); sph(0.05, 0x6b2a2a, -0.13, 0.12, 0, g, 6, 4); return g }, // bungeoppang
+  food0: () => { const g = new THREE.Group(); const b = sph(0.2, 0xb8701f, 0, 0.07, 0, g, 10, 6); b.scale.set(1, 0.42, 0.62); const tl = mesh(geo('cone', () => new THREE.ConeGeometry(0.1, 0.15, 3)), mat(0xa35f17), 0.24, 0.07, 0, g); tl.rotation.z = Math.PI / 2; for (const x of [-0.06, 0.05]) box(0.025, 0.03, 0.18, 0x8a4b10, x, 0.13, 0, g); sph(0.05, 0x6b2a2a, -0.13, 0.12, 0, g, 6, 4); return g }, // bungeoppang
   raw1: () => { const g = new THREE.Group(); box(0.32, 0.07, 0.22, 0xf0d39a, 0, 0.04, 0, g); box(0.32, 0.05, 0.22, 0xe6c07e, 0, 0.1, 0, g); return g }, // fish-cake sheets
   food1: () => { const g = new THREE.Group(); const st = cyl(0.015, 0.015, 0.5, 0xc8a26b, 0, 0.06, 0, g, 5); st.rotation.z = Math.PI / 2; for (const x of [-0.1, 0.06]) { const p = box(0.13, 0.05, 0.16, 0xe8b96a, x, 0.07, 0, g); p.rotation.x = 0.25 } return g }, // eomuk skewer
   raw2: () => { const g = new THREE.Group(); for (const [x, z] of [[-0.08, -0.05], [0.05, 0], [-0.02, 0.07]]) { const r = cyl(0.04, 0.04, 0.3, 0xf6f1e4, x, 0.05, z, g, 6); r.rotation.z = Math.PI / 2 } return g }, // rice cakes
@@ -270,7 +363,19 @@ function padMesh(color) {
   scene.add(g); return g
 }
 const pads = []
-const addPad = (kind, stall, x, z, color) => { const p = { kind, stall, x, z, g: padMesh(color) }; p.g.position.set(x, 0, z); pads.push(p); return p }
+const PAD_ICON = {}
+const padIcon = (key, draw) => (PAD_ICON[key] ||= canvasTex(128, 128, (g) => { g.translate(64, 64); draw(g) }).tex)
+const ICONS = {
+  crate: (g) => { g.fillStyle = '#c98f4f'; g.fillRect(-34, -18, 68, 44); g.fillStyle = '#8a5a2b'; g.fillRect(-34, -18, 68, 8); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(0, -48); g.lineTo(-16, -26); g.lineTo(16, -26); g.fill() },
+  grill: (g) => { g.fillStyle = '#ff7a1a'; g.beginPath(); g.moveTo(0, -42); g.bezierCurveTo(30, -10, 30, 30, 0, 34); g.bezierCurveTo(-30, 30, -30, -10, 0, -42); g.fill(); g.fillStyle = '#ffd23f'; g.beginPath(); g.moveTo(0, -8); g.bezierCurveTo(14, 8, 14, 28, 0, 30); g.bezierCurveTo(-14, 28, -14, 8, 0, -8); g.fill() },
+  disp: (g) => { g.fillStyle = '#fff'; g.beginPath(); g.ellipse(0, 10, 40, 16, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#6cff8a'; g.beginPath(); g.moveTo(0, -46); g.lineTo(-18, -20); g.lineTo(18, -20); g.fill(); g.fillRect(-6, -22, 12, 22) },
+  cash: (g) => { g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(0, 0, 34, 0, Math.PI * 2); g.fill(); g.fillStyle = '#8a5a00'; g.font = '900 44px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('₩', 0, 3) },
+}
+const addPad = (kind, stall, x, z, color) => {
+  const p = { kind, stall, x, z, g: padMesh(color) }; p.g.position.set(x, 0, z); pads.push(p)
+  if (ICONS[kind]) { const m = mesh(geo('icon', () => new THREE.PlaneGeometry(0.95, 0.95)), new THREE.MeshBasicMaterial({ map: padIcon(kind, ICONS[kind]), transparent: true, depthWrite: false }), 0, 0.03, 0, p.g); m.rotation.x = -Math.PI / 2 }
+  return p
+}
 
 // ---------------------------------------------------------------- stalls: orange tent pojangmacha, two rows
 function neon(text, color, w = 3.2) {
@@ -282,7 +387,7 @@ function neon(text, color, w = 3.2) {
   return mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }))
 }
 // an old-style shop board: cream panel, thick red letters, dark frame with rivets; the translation hangs below
-function shopSign(native, local, accent, w) {
+function signTex(native, local, accent) {
   const showLocal = lang !== city.lang
   const { tex } = canvasTex(512, 256, (g, W) => {
     g.fillStyle = '#3a2a1e'; g.beginPath(); g.roundRect(6, 6, W - 12, 150, 10); g.fill()
@@ -298,7 +403,14 @@ function shopSign(native, local, accent, w) {
       g.fillStyle = '#fff'; g.fillText(local, W / 2, 207, W - 60)
     }
   })
-  return mesh(new THREE.PlaneGeometry(w, w / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }))
+  return tex
+}
+const shopSign = (native, local, accent, w) => mesh(new THREE.PlaneGeometry(w, w / 2), new THREE.MeshBasicMaterial({ map: signTex(native, local, accent), transparent: true, depthWrite: false }))
+// language changed in settings: new plates under the signs, new talk lines, new money-spot label
+function relabel() {
+  for (const st of stalls) { const m = st.sign.material; m.map.dispose(); m.map = signTex(city[st.name], t(st.name), st.neon); m.needsUpdate = true }
+  for (const tex of talkTex.values()) tex.dispose()
+  talkTex.clear(); drawBuy(); hudStreet(); applyText()
 }
 const steamTex = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,.75)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64) }).tex
 const ROWS = [{ grill: -11.2, disp: -5.2 }, { grill: 1.4, disp: 7.0 }]
@@ -325,7 +437,8 @@ for (const s of stalls) {
   else if (s.id === 2) { cyl(0.8, 0.8, 0.12, 0x2a2a30, s.grill.x, 0.92, s.grill.z, s.root, 14); cyl(0.74, 0.74, 0.02, 0xd8341e, s.grill.x, 0.99, s.grill.z, s.root, 14) }
   else box(1.8, 0.08, 1.0, 0x1a1a1f, s.grill.x, 0.9, s.grill.z, s.root)
   s.grillShow = new THREE.Group(); s.grillShow.position.set(s.grill.x, s.id === 1 ? 1.25 : 0.96, s.grill.z); s.root.add(s.grillShow)
-  s.light = new THREE.PointLight(0xffb35c, 22, 10, 1.6); s.light.position.set(s.x + side * 1.0, 2.2, R.grill + 1); s.root.add(s.light)
+  glow(s.x, R.grill + 1.6, 3.4); glow(s.x, R.disp + 1.2, 2.6)
+  s.light = new THREE.PointLight(0xffb35c, 30, 11, 1.4); s.light.position.set(s.x + side * 1.0, 2.2, R.grill + 1); s.root.add(s.light)
   box(2.0, 0.8, 0.9, 0x8a5a33, s.disp.x, 0.4, s.disp.z, s.root); box(2.1, 0.06, 1.0, 0xf5e6c8, s.disp.x, 0.83, s.disp.z, s.root); s.boxes.push(block(s.disp.x, s.disp.z, 2.0, 0.9))
   s.dispShow = new THREE.Group(); s.dispShow.position.set(s.disp.x, 0.86, s.disp.z); s.root.add(s.dispShow)
   s.pads = {
@@ -378,6 +491,9 @@ function setStep(i) {
 // ---------------------------------------------------------------- game state
 const game = { phase: 'title', time: 0, money: 0, earned: 0, served: 0, lost: 0, rush: false, spawnT: 1.5, rushShown: false, step: 0, lit: 1, clearT: 0, unlocks: [] }
 const player = { x: 0, z: -1.5, face: Math.PI, items: [], cap: 6, speed: 5.4, rig: makeTiger(), xferT: 0, auto: Q.has('auto') }
+player.rig.g.scale.setScalar(1.25)
+// a warm light that walks with Baekho, so the boss is always the brightest thing on screen
+const bossLight = new THREE.PointLight(0xffe2b0, 14, 6, 1.2); bossLight.position.set(0, 3, 1); player.rig.g.add(bossLight)
 const helpers = [], customers = [], queues = [[], [], [], []], cashQ = []
 const EXIT = { x: 1.5, z: Z1 + 1 }, ENTER = [{ x: -4.4, z: Z1 + 1 }, { x: 4.4, z: Z1 + 1 }]
 const qSlot = (s, i) => ({ x: stalls[s].x, z: stalls[s].disp.z + 1.25 + i * 0.85 })
@@ -446,7 +562,7 @@ let talkClock = 0 // at most one new line every ~2.5 s, so each stays readable
 const mayTalk = () => { if (talkClock > 0) return false; talkClock = rnd(2.2, 3.4); return true }
 
 const ringGeo = new THREE.RingGeometry(0.42, 0.5, 24)
-function removeWalker(w) { scene.remove(w.rig.g); for (const k of ['ring', 'bubble', 'talk']) if (w[k]) scene.remove(w[k]) }
+function removeWalker(w) { scene.remove(w.rig.g); for (const k of ['ring', 'bubble', 'talk']) if (w[k]) { scene.remove(w[k]); w[k].material.dispose() } }
 
 function spawnCustomer() {
   const open = stalls.filter((s) => s.open && queues[s.id].length < MAX_LINE)
@@ -626,7 +742,7 @@ function movePlayer(dt) {
   setStack(rig.stack, player.items)
 }
 function unlock(st) {
-  sfx('unlock'); game.lit++; game.unlocks.push(Math.round(game.time))
+  sfx('unlock'); buzz(40); game.lit++; game.unlocks.push(Math.round(game.time))
   if (st.what === 'stall') { const s = stalls[st.id]; s.open = true; setOpenLook(s); buildGrid(); bannerShow(`${t(s.name)}!`, 1.6); burst(s.disp.x, s.disp.z) }
   else if (st.what === 'staff') { hire(st.role, st.x, st.z); bannerShow(`${t(roleKey[st.role])}!`, 1.6); burst(st.x, st.z) }
   else { arch.visible = true; burst(0, -7.6, 60, 4); hudStreet(); clearCity(); return }
@@ -693,17 +809,141 @@ function updateSparks(dt) {
   }
 }
 
-// ---------------------------------------------------------------- sound (small synth, no files)
-let actx = null
-function sfx(kind, vol = 0.6) {
-  if (!actx || Q.has('mute')) return
-  const now = actx.currentTime, o = actx.createOscillator(), g = actx.createGain()
-  const P = { pop: [520, 880, 0.08, 'triangle'], drop: [700, 420, 0.08, 'triangle'], coin: [1250, 1900, 0.12, 'square'], angry: [220, 140, 0.25, 'sawtooth'], unlock: [440, 1320, 0.4, 'triangle'], rush: [330, 660, 0.5, 'sawtooth'], end: [523, 1046, 0.7, 'triangle'] }[kind]
-  o.type = P[3]; o.frequency.setValueAtTime(P[0], now); o.frequency.exponentialRampToValueAtTime(P[1], now + P[2])
-  g.gain.setValueAtTime(vol * (P[3] === 'square' || P[3] === 'sawtooth' ? 0.08 : 0.2), now); g.gain.exponentialRampToValueAtTime(0.001, now + P[2] + 0.05)
-  o.connect(g).connect(actx.destination); o.start(now); o.stop(now + P[2] + 0.08)
+// ---------------------------------------------------------------- save (Playgama storage and this device; the newer one wins)
+const SAVE_KEY = 'baekho_pocha'
+const save = { at: 0, runs: 0, clears: 0, bestTime: 0, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
+let saveReady = false, saveTimer = 0
+function writeSave() {
+  if (!saveReady) return // never write defaults over a save that has not been read yet
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    save.at = Date.now()
+    const text = JSON.stringify(save)
+    try { localStorage.setItem(SAVE_KEY, text) } catch {}
+    if (platform.ready) try { Promise.resolve(window.bridge.storage.set(SAVE_KEY, text)).catch(() => {}) } catch {}
+  }, 300)
 }
-function unlockAudio() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)() } catch {} } actx?.resume?.() }
+const parseSave = (text) => { try { const o = typeof text === 'string' && text ? JSON.parse(text) : (text && typeof text === 'object' ? text : null); return o && typeof o === 'object' ? o : null } catch { return null } }
+async function readSave() {
+  let local = null, remote = null
+  try { local = parseSave(localStorage.getItem(SAVE_KEY)) } catch {}
+  if (platform.ready) {
+    // a slow or failing platform storage never holds the title for more than 2.5 s
+    try { remote = parseSave(await Promise.race([window.bridge.storage.get(SAVE_KEY), new Promise((r) => setTimeout(() => r(null), 2500))])) } catch {}
+  }
+  const best = [local, remote].filter(Boolean).sort((a, b) => (+b.at || 0) - (+a.at || 0))[0]
+  if (best) {
+    for (const k of ['at', 'runs', 'clears', 'bestTime', 'music', 'sfx', 'shake']) if (best[k] != null && Number.isFinite(+best[k])) save[k] = +best[k]
+    save.music = clamp(save.music, 0, 1); save.sfx = clamp(save.sfx, 0, 1); save.lang = pickLang(best.lang)
+  }
+  saveReady = true
+}
+
+// ---------------------------------------------------------------- platform (Playgama Bridge; the game runs the same without it)
+const platform = {
+  ready: false, audioOn: true, paused: false, adOpen: false,
+  message(name) { if (this.ready) try { window.bridge.platform.sendMessage(name) } catch {} },
+  track(name, data = {}) { if (player?.auto) return; if (this.ready) try { window.bridge.analytics?.send(name, data) } catch {} },
+  async init() {
+    const bridge = window.bridge
+    if (!bridge || window.__noBridge) return
+    try {
+      bridge.engine = 'javascript'
+      await Promise.race([bridge.initialize(), new Promise((_, no) => setTimeout(() => no(new Error('bridge timeout')), 6000))])
+      this.ready = true
+      this.audioOn = bridge.platform.isAudioEnabled !== false
+      const ev = bridge.EVENT_NAME
+      bridge.platform.on(ev.AUDIO_STATE_CHANGED, (on) => { this.audioOn = on; applyVolume() })
+      bridge.platform.on(ev.PAUSE_STATE_CHANGED, (on) => { this.paused = on; applyVolume(); if (on) pauseGame() })
+      bridge.advertisement.on(ev.INTERSTITIAL_STATE_CHANGED, (st) => this.onAd(st))
+      bridge.advertisement.on(ev.REWARDED_STATE_CHANGED, (st) => this.onReward(st))
+      const lg = pickLang(bridge.platform.language); if (lg && !Q.get('lang')) lang = lg
+    } catch (error) { console.warn('bridge', error) }
+  },
+  onAd(state) {
+    if (state === 'opened') { this.adOpen = true; clearTimeout(this.adWait); applyVolume() }
+    if (state === 'closed' || state === 'failed') { this.adOpen = false; applyVolume(); this.afterAd() }
+  },
+  // A full-screen ad only when Play again / Title is pressed after a clear (never over the result itself), never in the
+  // first 2 minutes on the page, at most once per 3 minutes (BALANCE.md 'ads'). The next screen starts when the ad closes,
+  // or after 3 s if no ad came.
+  lastAd: 0, adNext: null, adWait: 0, since: 0,
+  // rewarded, the player's choice: done(true) only after 'rewarded'; a failed or missing ad gives nothing and goes on
+  rewardDone: null, rewarded: false, rewardWait: 0,
+  onReward(state) {
+    if (state === 'opened') { this.adOpen = true; clearTimeout(this.rewardWait); applyVolume() }
+    if (state === 'rewarded') this.rewarded = true
+    if (state === 'closed' || state === 'failed') { this.adOpen = false; applyVolume(); this.endReward() }
+  },
+  endReward() { clearTimeout(this.rewardWait); const done = this.rewardDone; this.rewardDone = null; const ok = this.rewarded; this.rewarded = false; done?.(ok) },
+  rewardedAd(done) {
+    if (this.rewardDone) return // double tap: one ad
+    if (!this.ready) { done(false); return }
+    this.rewardDone = done; this.rewarded = false; this.lastAd = Date.now()
+    this.rewardWait = setTimeout(() => { if (!this.adOpen) this.endReward() }, 4000)
+    try { window.bridge.advertisement.showRewarded() } catch { this.endReward() }
+  },
+  afterAd() { const next = this.adNext; this.adNext = null; clearTimeout(this.adWait); next?.() },
+  interstitial(next) {
+    if (this.adNext) return // a second fast tap while the ad is coming: one ad, one next screen
+    if (!this.ready || performance.now() - this.since < 120000 || Date.now() - this.lastAd < 180000) { next(); return }
+    this.lastAd = Date.now(); this.adNext = next
+    this.adWait = setTimeout(() => { if (!this.adOpen) this.afterAd() }, 3000)
+    try { window.bridge.advertisement.showInterstitial() } catch { this.afterAd() }
+  },
+}
+
+// ---------------------------------------------------------------- sound: files from tools/make_sounds.py (Playgama 3.3.1)
+const audio = {
+  ctx: null, buffers: {}, master: null, musicGain: null, sfxGain: null, music: null,
+  unlock() {
+    if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume?.(); return }
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) return
+    try { this.ctx = new Ctx() } catch { return }
+    this.master = this.ctx.createGain(); this.master.connect(this.ctx.destination)
+    this.musicGain = this.ctx.createGain(); this.musicGain.connect(this.master)
+    this.sfxGain = this.ctx.createGain(); this.sfxGain.connect(this.master)
+    applyVolume()
+    for (const n of ['pop', 'drop', 'coin', 'angry', 'unlock', 'rush', 'end', 'click']) this.load(n)
+    this.load('market').then(() => this.startMusic())
+    for (const n of ['sizzle', 'crowd']) this.load(n).then(() => this.startLoop(n))
+  },
+  async load(name) {
+    try { this.buffers[name] = await this.ctx.decodeAudioData(await (await fetch(`audio/${name}.ogg`)).arrayBuffer()) } catch (error) { console.warn('sound', name, error) }
+  },
+  play(name, vol = 1) {
+    if (!this.ctx || !this.buffers[name]) return
+    const src = this.ctx.createBufferSource(), g = this.ctx.createGain(); src.buffer = this.buffers[name]; g.gain.value = vol
+    src.connect(g).connect(this.sfxGain); src.start()
+  },
+  // street ambience under the music: the crowd murmurs all night, the griddles sizzle louder as more stalls open
+  loops: {},
+  startLoop(name) {
+    if (this.loops[name] || !this.buffers[name]) return
+    const src = this.ctx.createBufferSource(), g = this.ctx.createGain(); src.buffer = this.buffers[name]; src.loop = true; g.gain.value = 0
+    src.connect(g).connect(this.sfxGain); src.start(); this.loops[name] = g
+  },
+  ambience(crowd, sizzle) {
+    if (!this.ctx) return
+    const now = this.ctx.currentTime
+    this.loops.crowd?.gain.setTargetAtTime(crowd, now, 0.4); this.loops.sizzle?.gain.setTargetAtTime(sizzle, now, 0.3)
+  },
+  startMusic() {
+    if (this.music || !this.buffers.market) return
+    const src = this.ctx.createBufferSource(); src.buffer = this.buffers.market; src.loop = true; src.connect(this.musicGain); src.start(); this.music = src
+  },
+}
+const sfx = (kind, vol = 0.6) => audio.play(kind, vol * 1.4)
+const unlockAudio = () => audio.unlock()
+function applyVolume() {
+  if (!audio.ctx) return
+  const silent = Q.has('mute') || !platform.audioOn || platform.adOpen || platform.paused || document.hidden
+  audio.master.gain.value = silent ? 0 : 1
+  audio.musicGain.gain.value = save.music * 0.45
+  audio.sfxGain.gain.value = save.sfx
+}
+const buzz = (ms) => { if (save.shake && navigator.userActivation?.hasBeenActive) try { navigator.vibrate?.(ms) } catch {} }
 
 // ---------------------------------------------------------------- HUD and screens
 let bannerT = 0
@@ -722,31 +962,126 @@ function startGame() {
   for (const c of customers) removeWalker(c)
   for (const h of helpers) removeWalker(h)
   customers.length = 0; helpers.length = 0; queues.forEach((q) => { q.length = 0 }); cashQ.length = 0
-  Object.assign(game, { phase: 'play', time: 0, money: 0, earned: 0, served: 0, lost: 0, rush: false, spawnT: 1.2, rushShown: false, lit: 1, clearT: 0, unlocks: [] })
+  flyers.forEach((f) => scene.remove(f.m)); flyers.length = 0
+  $('offerBtn').classList.add('hide')
+  Object.assign(game, { phase: 'play', paused: false, offered: false, offerT: 0, time: 0, money: 0, earned: 0, served: 0, lost: 0, rush: false, spawnT: 1.2, rushShown: false, lit: 1, clearT: 0, unlocks: [] })
   resetStalls(); arch.visible = false
   Object.assign(player, { x: 0, z: -1.5, items: [], face: Math.PI, path: [] })
   setStep(0)
-  $('title').classList.add('hide'); $('end').classList.add('hide'); $('hud').classList.remove('hide')
-  $('hint').textContent = t('hint'); $('hint').classList.add('on'); setTimeout(() => $('hint').classList.remove('on'), 4500)
+  for (const id of ['title', 'end', 'panel']) $(id).classList.add('hide')
+  $('hud').classList.remove('hide'); $('map').classList.remove('hide')
+  $('hint').textContent = t('hint'); setTimeout(() => $('hint').classList.add('on'), 1600); setTimeout(() => $('hint').classList.remove('on'), 6000)
+  // arrival: a passport stamp for the city, 2 s
+  $('stampCity').textContent = city.stamp; $('stampSub').textContent = t('sub'); $('stampDate').textContent = new Date().toISOString().slice(0, 10).replaceAll('-', '.')
+  $('stamp').classList.remove('hide', 'on'); void $('stamp').offsetWidth; $('stamp').classList.add('on'); clearTimeout(game.stampT); game.stampT = setTimeout(() => $('stamp').classList.add('hide'), 2300)
+  player.callT = 2.6
   guardBack(true)
+  save.runs++; writeSave()
+  platform.message('gameplay_started'); platform.track('shift_start', { run: save.runs })
+}
+// Rewarded offer (BALANCE.md 'ads'): just before the rush, a helper the player has not hired yet works 3 minutes free.
+// Shown only when the platform can show ads and a role is missing; a failed ad hides the button and gives nothing.
+const TEMP_HELPER = 180
+function offerHelper() {
+  const role = ['cash', 'carry', 'cook'].find((r) => !helpers.some((h) => h.role === r))
+  if (!role || !platform.ready) return
+  game.offerRole = role; game.offerT = 14
+  $('offerTxt').textContent = t('freeHelper').replace('{who}', t(roleKey[role]))
+  $('offerBtn').classList.remove('hide')
+}
+function takeOffer() {
+  $('offerBtn').classList.add('hide'); game.offerT = 0
+  const role = game.offerRole
+  platform.rewardedAd((ok) => {
+    if (!ok || game.phase !== 'play') return
+    const st = STEPS.find((x) => x.role === role); hire(role, st.x, st.z); helpers[helpers.length - 1].temp = TEMP_HELPER
+    burst(st.x, st.z, 24); sfx('unlock'); platform.track('reward_helper', { role })
+  })
 }
 // all 8 lamps: fireworks over Namsan, then the card that opens the next city
 function clearCity() {
-  game.phase = 'clear'; game.clearT = 0; buy.g.visible = false; hudStreet(); sfx('end')
+  game.phase = 'clear'; game.clearT = 0; buy.g.visible = false; hudStreet(); sfx('end'); buzz(80)
   bannerShow(t('clear'), 3)
   input.x = input.z = 0; input.id = null; $('stick').classList.add('hide')
+  const secs = Math.round(game.time), newBest = !save.bestTime || secs < save.bestTime
+  save.clears++; if (newBest) save.bestTime = secs
+  writeSave()
+  platform.message('gameplay_stopped'); platform.track('city_clear', { city: 'seoul', secs, earned: game.earned, lost: game.lost })
   setTimeout(() => {
     $('endTitle').textContent = t('clear')
     for (const [k, v] of [['time', mmss(game.time)], ['earned', '₩' + game.earned], ['served', game.served], ['lost', game.lost]]) { $(k + 'Lbl').textContent = t(k); $(k + 'Txt').textContent = v }
+    $('newBest').textContent = newBest ? t('newBest') : `${t('best')} ${mmss(save.bestTime)}`
+    $('newBest').classList.remove('hide'); $('newBest').classList.toggle('dim', !newBest)
     $('nextCityLbl').textContent = t('nextCity'); $('nextCityTxt').textContent = t('tokyo'); $('lock').classList.remove('open')
-    $('againBtn').textContent = t('again'); $('end').classList.remove('hide'); $('hud').classList.add('hide')
+    $('postFrom').textContent = t('postcard'); $('postMark').textContent = city.stamp; $('ticketRoute').textContent = `${city.code} ✈ TYO`
+    $('end').classList.remove('hide'); $('hud').classList.add('hide'); $('offerBtn').classList.add('hide'); $('map').classList.add('hide')
     game.phase = 'end'
     setTimeout(() => { $('lock').classList.add('open'); sfx('unlock') }, 900)
-  }, 3200)
+  }, Q.has('fast') ? 0 : 3200) // ?fast: tests skip the fireworks wait
 }
-$('titleTxt').textContent = t('title'); $('subTxt').textContent = t('sub'); $('startBtn').textContent = t('start'); document.title = t('title')
-$('startBtn').addEventListener('click', startGame)
-$('againBtn').addEventListener('click', startGame)
+function goTitle() {
+  if (game.phase === 'play') platform.message('gameplay_stopped')
+  game.phase = 'title'; game.paused = false
+  for (const c of customers) removeWalker(c)
+  for (const h of helpers) removeWalker(h)
+  customers.length = 0; helpers.length = 0; queues.forEach((q) => { q.length = 0 }); cashQ.length = 0
+  resetStalls(); arch.visible = false; setStep(0)
+  Object.assign(player, { x: 0, z: -1.5, items: [], face: Math.PI, path: [] })
+  for (const id of ['end', 'panel', 'hud', 'map', 'offerBtn']) $(id).classList.add('hide')
+  $('title').classList.remove('hide'); applyText()
+}
+// every fixed text on the screens (again after a language change)
+function applyText() {
+  document.documentElement.lang = lang; document.title = t('title')
+  $('titleTxt').textContent = t('title'); $('subTxt').textContent = t('sub'); $('startBtn').textContent = t('start')
+  $('bestRow').classList.toggle('hide', !save.bestTime); $('bestLbl').textContent = t('best'); $('bestTxt').textContent = mmss(save.bestTime)
+  $('againBtn').textContent = t('again'); $('homeBtn').textContent = t('home')
+  $('resumeBtn').textContent = game.phase === 'play' ? t('resume') : t('close'); $('quitBtn').textContent = t('quit')
+  if (!$('panel').classList.contains('hide')) renderPanel()
+}
+
+// ---------------------------------------------------------------- settings (title) and pause (mid-shift): one panel
+function renderPanel() {
+  const host = $('panelBody'), inPlay = game.phase === 'play'
+  $('panelTitle').textContent = inPlay ? t('paused') : t('settings')
+  host.innerHTML = ''
+  const row = (label, el, cls = '') => { const d = document.createElement('label'); d.className = 'opt ' + cls; const sp = document.createElement('span'); sp.textContent = label; d.append(sp, el); host.appendChild(d) }
+  const slider = (key) => { const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 1; s.step = 0.05; s.value = save[key]; s.oninput = () => { save[key] = +s.value; applyVolume(); writeSave() }; s.onchange = () => sfx('click'); return s }
+  row(t('music'), slider('music')); row(t('sfx'), slider('sfx'))
+  const toggle = (get, set) => { const b = document.createElement('button'); b.className = 'sub'; const show = () => { b.textContent = get() ? t('on') : t('off'); b.classList.toggle('on', !!get()) }; b.onclick = (e) => { e.preventDefault(); set(!get()); sfx('click'); show() }; show(); return b }
+  row(t('shake'), toggle(() => save.shake, (v) => { save.shake = v ? 1 : 0; writeSave(); buzz(40) }))
+  if (document.fullscreenEnabled && !platform.ready) row(t('fullscreen'), toggle(() => !!document.fullscreenElement, (v) => { try { v ? document.documentElement.requestFullscreen?.() : document.exitFullscreen?.() } catch {} }))
+  const h = document.createElement('div'); h.className = 'opt langTitle'; h.textContent = t('language'); host.appendChild(h)
+  const grid = document.createElement('div'); grid.className = 'langs'
+  for (const k of LANG_KEYS) {
+    const b = document.createElement('button'); b.className = 'sub' + (k === lang ? ' on' : ''); b.textContent = LANGUAGES[k]; b.lang = k
+    b.onclick = () => { sfx('click'); lang = k; save.lang = k; writeSave(); relabel() }
+    grid.appendChild(b)
+  }
+  host.appendChild(grid)
+  $('quitBtn').classList.toggle('hide', !inPlay); $('resumeBtn').classList.toggle('only', !inPlay)
+  $('resumeBtn').textContent = inPlay ? t('resume') : t('close')
+}
+function openPanel() {
+  if (game.phase === 'clear') return
+  if (game.phase === 'play') { game.paused = true; input.x = input.z = 0; input.id = null; $('stick').classList.add('hide') }
+  renderPanel(); $('panel').classList.remove('hide'); $('title').classList.add('hide'); $('end').classList.add('hide')
+}
+function closePanel() {
+  $('panel').classList.add('hide'); game.paused = false
+  if (game.phase === 'title') $('title').classList.remove('hide')
+  if (game.phase === 'end') $('end').classList.remove('hide')
+}
+function pauseGame() { if (game.phase === 'play' && !game.paused) openPanel() }
+document.addEventListener('visibilitychange', () => { applyVolume(); if (document.hidden) pauseGame() })
+const tap = (id, fn) => $(id).addEventListener('click', () => { unlockAudio(); sfx('click', 0.4); fn() })
+tap('startBtn', startGame)
+tap('againBtn', () => platform.interstitial(startGame))
+tap('homeBtn', () => platform.interstitial(goTitle))
+tap('setBtn', () => ($('panel').classList.contains('hide') ? openPanel() : closePanel()))
+tap('resumeBtn', closePanel)
+tap('quitBtn', goTitle)
+$('offerBtn').addEventListener('click', () => { unlockAudio(); sfx('click', 0.4); takeOffer() })
 
 // ---------------------------------------------------------------- input: drag anywhere = stick
 // Phones: an edge swipe went back a page mid-shift (11-14 user). Block the default of every touch on the game, and while a
@@ -756,7 +1091,7 @@ let guard = false
 function guardBack(on) { if (on && !guard) { guard = true; try { history.pushState({ pocha: 1 }, '') } catch {} } }
 addEventListener('popstate', () => { if (game.phase === 'play') { try { history.pushState({ pocha: 1 }, '') } catch {} } else guard = false })
 canvas.addEventListener('pointerdown', (e) => {
-  unlockAudio(); if (game.phase !== 'play') return
+  unlockAudio(); if (game.phase !== 'play' || game.paused) return
   input.id = e.pointerId; input.ox = e.clientX; input.oy = e.clientY; input.x = input.z = 0
   const st = $('stick'); st.style.left = e.clientX + 'px'; st.style.top = e.clientY + 'px'; st.classList.remove('hide'); $('knob').style.transform = ''
   canvas.setPointerCapture?.(e.pointerId)
@@ -770,7 +1105,11 @@ addEventListener('pointermove', (e) => {
 })
 const lift = (e) => { if (e.pointerId !== input.id) return; input.id = null; input.x = input.z = 0; $('stick').classList.add('hide') }
 addEventListener('pointerup', lift); addEventListener('pointercancel', lift)
-addEventListener('keydown', (e) => { input.keys.add(e.code); if (e.code === 'Enter' && (game.phase === 'title' || game.phase === 'end')) startGame() })
+addEventListener('keydown', (e) => {
+  input.keys.add(e.code)
+  if (e.code === 'Escape' || e.code === 'KeyP') { if (!$('panel').classList.contains('hide')) closePanel(); else pauseGame() }
+  if (e.code === 'Enter' && $('panel').classList.contains('hide') && !e.repeat) { if (game.phase === 'title') startGame(); else if (game.phase === 'end') platform.interstitial(startGame) }
+})
 addEventListener('keyup', (e) => input.keys.delete(e.code))
 addEventListener('blur', () => input.keys.clear())
 
@@ -782,11 +1121,12 @@ function updateCamera(dt, snap) {
   const aspect = camera.aspect, tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), wide = aspect >= 1
   const k = snap ? 1 : 1 - Math.exp(-dt * 2.2)
   if (game.phase === 'play') {
-    const d = wide ? 15.5 : Math.max(15, 7.6 / (2 * tan * aspect))
-    const tx = wide ? 0 : clamp(player.x * 0.7, -2.2, 2.2)
-    const tz = wide ? clamp(player.z, -7, 17) : clamp(player.z - 1.2, -9, 17)
+    const d = wide ? 15.5 : 20
+    const gt = guideTarget(), ax = gt ? player.x + (gt.x - player.x) * 0.35 : player.x, az = gt ? player.z + (gt.z - player.z) * 0.35 : player.z
+    const tx = wide ? 0 : clamp(ax * 0.6, -2.2, 2.2)
+    const tz = wide ? clamp(player.z, -7, 17) : clamp(az - 1.4, -10, 16)
     camAt.x += (tx - camAt.x) * k; camAt.z += (tz - camAt.z) * k
-    camPos.set(camAt.x, d * (wide ? 0.7 : 0.84), camAt.z + d * (wide ? 0.72 : 0.54)); look.set(camAt.x, 0, camAt.z - 0.5)
+    camPos.set(camAt.x, d * (wide ? 0.7 : 0.7), camAt.z + d * (wide ? 0.72 : 0.74)); look.set(camAt.x, 0, camAt.z - 0.5)
     camera.position.copy(camPos)
   } else {
     // title and the end: low at the street mouth, looking up the street at Namsan tower
@@ -796,13 +1136,62 @@ function updateCamera(dt, snap) {
   camera.lookAt(look)
 }
 
+// ---------------------------------------------------------------- street map (corner, look only) and the edge arrow
+// 11-14 user "맵이 큰거 같은데 도우미맵을 띄워줘": Baekho (white dot), open stalls (their colour), lots not open yet
+// (dashed), the next money spot (blinking gold), helpers (orange dots). The next spot off screen also gets an arrow on
+// the screen edge.
+const mapCv = $('map'), mapG = mapCv.getContext('2d')
+let mapT = 0
+function drawMap(now) {
+  const W = mapCv.clientWidth, H = mapCv.clientHeight, dpr = Math.min(2, devicePixelRatio || 1)
+  if (!W || !H) return
+  if (mapCv.width !== Math.round(W * dpr)) { mapCv.width = Math.round(W * dpr); mapCv.height = Math.round(H * dpr) }
+  const g = mapG; g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H)
+  const pad = 5, sx = (W - pad * 2) / (XW * 2), sz = (H - pad * 2) / (Z1 - Z0)
+  const X = (x) => pad + (x + XW) * sx, Z = (z) => pad + (z - Z0) * sz
+  g.fillStyle = 'rgba(20,14,40,.82)'; g.beginPath(); g.roundRect(0, 0, W, H, 10); g.fill()
+  g.fillStyle = '#4a4060'; g.fillRect(X(-XW), Z(Z0), XW * 2 * sx, (Z1 - Z0) * sz)
+  for (const s of stalls) {
+    const R = ROWS[s.row], x0 = X(s.x - 1.3), z0 = Z(R.grill - 0.8), w = 2.6 * sx, h = (R.disp - R.grill + 1.6) * sz
+    if (s.open) { g.fillStyle = s.neon; g.fillRect(x0, z0, w, h) } else { g.strokeStyle = 'rgba(255,255,255,.45)'; g.setLineDash([3, 2]); g.lineWidth = 1.2; g.strokeRect(x0, z0, w, h); g.setLineDash([]) }
+  }
+  g.fillStyle = '#ffd23f'; g.fillRect(X(CASH.x - 1), Z(CASH.z - 0.45), 2 * sx, 0.9 * sz)
+  if (arch.visible) { g.fillStyle = '#c0392b'; g.fillRect(X(-5.6), Z(-7.8), 11.2 * sx, 2) }
+  if (buy.step && buy.g.visible && Math.floor(now / 350) % 2 === 0) { g.strokeStyle = '#ffd23f'; g.lineWidth = 2; g.strokeRect(X(buy.x) - 5, Z(buy.z) - 5, 10, 10) }
+  g.fillStyle = 'rgba(220,220,235,.55)'; for (const c of customers) { g.beginPath(); g.arc(X(c.x), Z(c.z), 1.4, 0, Math.PI * 2); g.fill() }
+  g.fillStyle = '#ff9a2a'; for (const h of helpers) { g.beginPath(); g.arc(X(h.x), Z(h.z), 2.6, 0, Math.PI * 2); g.fill() }
+  g.fillStyle = '#fff'; g.strokeStyle = '#1b1530'; g.lineWidth = 1.5; g.beginPath(); g.arc(X(player.x), Z(player.z), 3.8, 0, Math.PI * 2); g.fill(); g.stroke()
+}
+const edgeV = new THREE.Vector3()
+function updateEdge() {
+  const el = $('edge'), tgt = game.phase === 'play' && !game.paused ? (guideTarget() || (buy.step && game.money >= buy.left ? buy : null)) : null
+  if (!tgt) { el.classList.add('hide'); return }
+  edgeV.set(tgt.x, 0.5, tgt.z).project(camera)
+  const behind = edgeV.z > 1, inside = !behind && Math.abs(edgeV.x) < 0.92 && Math.abs(edgeV.y) < 0.9
+  if (inside) { el.classList.add('hide'); return }
+  let x = behind ? -edgeV.x : edgeV.x, y = behind ? -edgeV.y : edgeV.y
+  const k = 1 / Math.max(Math.abs(x) / 0.86, Math.abs(y) / 0.8, 1e-6); x *= k; y *= k
+  const px = (x + 1) / 2 * innerWidth, py = (1 - y) / 2 * innerHeight
+  el.style.left = clamp(px, 30, innerWidth - 30) + 'px'; el.style.top = clamp(py, 120, innerHeight - 40) + 'px'
+  el.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(-y, x)}rad)`
+  el.classList.remove('hide')
+}
+
 // ---------------------------------------------------------------- loop
 let last = performance.now()
 function frame(now) {
   requestAnimationFrame(frame)
   const real = Math.min(0.05, (now - last) / 1000); last = now
-  for (let n = 0; n < SPEED; n++) step(real, now)
+  const hold = game.paused || platform.adOpen || platform.paused
+  if (!hold) for (let n = 0; n < SPEED; n++) step(real, now)
   updateCamera(real)
+  if (game.phase === 'play' && now - mapT > 90) { mapT = now; drawMap(now) }
+  updateEdge()
+  if (audio.ctx) {
+    let near = 99; for (const st of stalls) if (st.open) near = Math.min(near, Math.hypot(player.x - st.grill.x, player.z - st.grill.z))
+    const play = game.phase === 'play'
+    audio.ambience(play ? 0.16 + (game.rush ? 0.14 : 0) + Math.min(0.12, customers.length * 0.008) : 0.08, play ? 0.04 * openCount() + Math.max(0, 1 - near / 4) * 0.22 : 0)
+  }
   renderer.render(scene, camera)
 }
 function step(dt, now) {
@@ -810,6 +1199,9 @@ function step(dt, now) {
   if (game.phase === 'play') {
     game.time += dt
     if (!game.rushShown && game.time > RUSH_AT - 3) { game.rushShown = true; bannerShow(t('rushSoon'), 2.4) }
+    if (!game.offered && game.time > RUSH_AT - 14) { game.offered = true; offerHelper() }
+    if (game.offerT > 0) { game.offerT -= dt; if (game.offerT <= 0) $('offerBtn').classList.add('hide') }
+    for (let i = helpers.length - 1; i >= 0; i--) { const h = helpers[i]; if (h.temp == null) continue; h.temp -= dt; if (h.temp <= 0) { removeWalker(h); helpers.splice(i, 1); burst(h.x, h.z, 14) } }
     const rushNow = game.time >= RUSH_AT && game.time < RUSH_AT + RUSH_LEN
     if (rushNow && !game.rush) { bannerShow(t('rush'), 2.2); sfx('rush') }
     game.rush = rushNow
@@ -819,6 +1211,8 @@ function step(dt, now) {
     $('moneyTxt').textContent = game.money
   } else animate(player.rig, false, dt, player.items.length > 0)
   if (game.phase === 'clear' || game.phase === 'end') { game.clearT += dt; if (Math.random() < dt * 4) burst(rnd(-10, 30), rnd(-80, -50), 30, rnd(30, 55), 5) }
+  if (game.phase === 'play') { player.callT = (player.callT ?? 2) - dt; if (player.callT <= 0) { player.callT = rnd(14, 24); talk(player, 'call') } }
+  updateTalk(player, dt, 3.1)
   updateHelpers(dt); updateCustomers(dt); updateStalls(dt); updateFlyers(dt); updateSparks(dt)
   if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) $('banner').classList.remove('on') }
   const r = game.rush ? 1 : 0
@@ -832,6 +1226,18 @@ function step(dt, now) {
   for (const p of pads) if (p.kind !== 'buy') p.g.scale.setScalar(p === g ? 1 + Math.sin(now / 120) * 0.08 : 1)
 }
 resetStalls(); setStep(0); updateCamera(0, true)
+applyText()
 requestAnimationFrame(frame)
+// boot: platform first (language, storage), then the save; the title waits for neither longer than a few seconds
+;(async () => {
+  await platform.init()
+  await readSave()
+  const want = pickLang(Q.get('lang')) || save.lang || lang
+  if (want !== lang) lang = want
+  relabel(); applyVolume()
+  $('setBtn').classList.remove('hide')
+  platform.message('game_ready')
+  window.__ready = true
+})()
 
-if (Q.has('debug')) window.__gt = { game, player, stalls, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, STEPS, findPath, camera }
+if (Q.has('debug')) window.__gt = { scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, stalls, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, STEPS, findPath, camera }

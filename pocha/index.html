@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Baekho Pocha</title>
-<link rel="stylesheet" href="style.css?v=f5de1b0">
+<link rel="stylesheet" href="style.css?v=98c56f8">
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -15,23 +15,52 @@
   </div>
   <div id="goal" class="pill"></div>
 </div>
+<canvas id="map" class="hide"></canvas>
+<div id="edge" class="hide"></div>
+<button id="setBtn" class="iconBtn hide" aria-label="settings"><i></i></button>
+<button id="offerBtn" class="hide"><i class="tv"></i><span id="offerTxt"></span></button>
 <div id="banner"></div>
+<div id="stamp" class="hide"><b id="stampCity"></b><span id="stampSub"></span><small id="stampDate"></small></div>
 <div id="hint"></div>
 <div id="stick" class="hide"><div id="knob"></div></div>
 <section id="title" class="card">
   <h1 id="titleTxt"></h1>
   <p id="subTxt"></p>
+  <div id="bestRow" class="row hide"><span id="bestLbl"></span><b id="bestTxt"></b></div>
   <button id="startBtn"></button>
 </section>
-<section id="end" class="card hide">
+<section id="end" class="card postcard hide">
+  <div id="postTop"><span id="postFrom"></span><i id="postMark"></i></div>
   <h2 id="endTitle"></h2>
   <div class="row"><span id="timeLbl"></span><b id="timeTxt"></b></div>
   <div class="row"><span id="earnedLbl"></span><b id="earnedTxt"></b></div>
   <div class="row"><span id="servedLbl"></span><b id="servedTxt"></b></div>
   <div class="row"><span id="lostLbl"></span><b id="lostTxt"></b></div>
-  <div id="nextCity"><span id="nextCityLbl"></span><b id="nextCityTxt"></b><i id="lock"></i></div>
+  <div id="nextCity" class="ticket"><span id="nextCityLbl"></span><b id="nextCityTxt"></b><i id="lock"></i><em id="ticketRoute"></em></div>
+  <div id="newBest" class="hide"></div>
   <button id="againBtn"></button>
+  <button id="homeBtn" class="sub"></button>
 </section>
-<script type="module" src="game.js?v=f5de1b0"></script>
+<section id="panel" class="card hide">
+  <h2 id="panelTitle"></h2>
+  <div id="panelBody"></div>
+  <button id="resumeBtn"></button>
+  <button id="quitBtn" class="sub"></button>
+</section>
+<script>
+// Playgama Bridge: the CDN first, the local copy if the CDN is slow or blocked, the game either way (?nobridge skips it)
+(function () {
+  var started = false
+  function go() { if (started) return; started = true; var s = document.createElement('script'); s.type = 'module'; s.src = 'game.js'; document.body.appendChild(s) }
+  if (/[?&]nobridge/.test(location.search)) { window.__noBridge = true; go(); return }
+  function local() { var s = document.createElement('script'); s.src = 'playgama-bridge.js'; s.onload = go; s.onerror = go; document.head.appendChild(s) }
+  var cdn = document.createElement('script'), done = false
+  var timer = setTimeout(function () { if (!done) { done = true; local() } }, 2000)
+  cdn.src = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
+  cdn.onload = function () { if (!done) { done = true; clearTimeout(timer); go() } }
+  cdn.onerror = function () { if (!done) { done = true; clearTimeout(timer); local() } }
+  document.head.appendChild(cdn)
+})()
+</script>
 </body>
 </html>
