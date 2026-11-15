@@ -1,11 +1,12 @@
-// Baekho Pocha, 2nd prototype (2026-11-14): Seoul, about 5 minutes. One stick (walk), no buttons in play.
+// Night Market Tycoon: Baekho Pocha (2026-11-15: four cities, Seoul -> Tokyo -> Bangkok -> Taipei, about 5 minutes each).
+// One stick (walk), no buttons in play.
 // Stand on a spot to work: batter -> grill -> display -> customers take food -> the till takes their money.
 // Goals on screen in three layers: the next money spot ("Next: Eomuk 30"), the street map n/8, and when all 8 are lit the
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, LANGUAGES } from './strings.js?v=3a2fa4f'
-const city = CITY.seoul
+import { STR, CITY, CITY_ORDER, LANGUAGES } from './strings.js?v=e9f098c'
+let cityId = 'seoul', city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
 const SPEED = Math.max(1, Math.min(10, Math.round(+Q.get('speed') || 1))) // tests: run faster
@@ -13,6 +14,8 @@ const LANG_KEYS = Object.keys(LANGUAGES)
 const pickLang = (code) => { const c = String(code || '').slice(0, 2).toLowerCase(); return LANG_KEYS.includes(c) ? c : '' }
 let lang = pickLang(Q.get('lang')) || pickLang(navigator.language) || 'en'
 const t = (k) => STR[lang][k] ?? STR.en[k]
+// a line that differs per city (Seoul uses the plain key: sub, clear, postcard, call)
+const tc = (k) => (cityId === 'seoul' ? t(k) : STR[lang][`${k}_${cityId}`] ?? STR.en[`${k}_${cityId}`])
 const talkLines = (k) => STR[lang].talk?.[k] || STR[lang][k] || STR.en.talk[k] || STR.en[k]
 const $ = (id) => document.getElementById(id)
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -20,9 +23,10 @@ const rnd = (a, b) => a + Math.random() * (b - a)
 const pick = (a) => a[Math.floor(Math.random() * a.length)]
 
 // ---------------------------------------------------------------- numbers (prototype; BALANCE.md comes with the first real build)
-const RUSH_AT = 175, RUSH_LEN = 22, PATIENCE = 32, MAX_GRILL = 10, MAX_DISP = 10, MAX_LINE = 4
+const RUSH_AT = 175, RUSH_LEN = 22, MAX_GRILL = 10, MAX_DISP = 10
+let PATIENCE = 32, MAX_LINE = 4 // a city's twist changes these (TWIST)
 // the 8 lamps of the street: the bungeoppang stall is lit from the start, then one money spot at a time
-const STEPS = [
+let STEPS = [
   { what: 'stall', id: 1, cost: 20, x: 2.7, z: -7.7 },
   { what: 'staff', role: 'cash', cost: 45, x: 3.6, z: 12.4 },
   { what: 'stall', id: 2, cost: 80, x: -2.7, z: 4.4 },
@@ -31,7 +35,7 @@ const STEPS = [
   { what: 'staff', role: 'cook', cost: 200, x: 0, z: 4.6 },
   { what: 'arch', cost: 260, x: 0, z: -8.4 },
 ]
-const spawnGap = () => (game.rush ? 0.75 : 4.6 / Math.pow(openCount(), 0.8)) * rnd(0.75, 1.25)
+const spawnGap = () => (game.rush ? 0.75 : 4.6 / Math.pow(openCount(), 0.8) * (TWIST[cityId].gapMul || 1)) * rnd(0.75, 1.25)
 
 // ---------------------------------------------------------------- renderer, scene
 const canvas = $('c')
@@ -39,6 +43,9 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 const scene = new THREE.Scene()
 const SKY = new THREE.Color(0x141a3a)
+// the current city is built into `world`; ROOT is where new meshes go (world while building a city, else the scene)
+const world = new THREE.Group(); scene.add(world)
+let ROOT = scene
 scene.background = SKY.clone()
 scene.fog = new THREE.Fog(0x141a3a, 40, 140)
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 300)
@@ -48,15 +55,15 @@ const moon = new THREE.DirectionalLight(0xb8c0ff, 1.1); moon.position.set(-6, 14
 const mats = new Map()
 const mat = (c, e = 0) => { const k = c + ':' + e; if (!mats.has(k)) mats.set(k, new THREE.MeshLambertMaterial({ color: c, emissive: e, flatShading: true })); return mats.get(k) }
 const basic = (c) => new THREE.MeshBasicMaterial({ color: c })
-function mesh(geo, m, x = 0, y = 0, z = 0, parent = scene) { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); parent.add(o); return o }
+function mesh(geo, m, x = 0, y = 0, z = 0, parent = ROOT) { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); parent.add(o); return o }
 const M = (c) => (typeof c === 'number' ? mat(c) : c)
 // shapes are cached by size: people, helpers and food are made again every customer and every run, and new geometry each
 // time grew GPU memory run after run (RELEASE_GATE MEM)
 const GEO = new Map()
 const geo = (key, make) => { let g = GEO.get(key); if (!g) { g = make(); GEO.set(key, g) } return g }
 const box = (w, h, d, c, x, y, z, p) => mesh(geo(`b${w},${h},${d}`, () => new THREE.BoxGeometry(w, h, d)), M(c), x, y, z, p)
-const cyl = (r1, r2, h, c, x, y, z, p, seg = 8) => mesh(geo(`c${r1},${r2},${h},${seg}`, () => new THREE.CylinderGeometry(r1, r2, h, seg)), M(c), x, y, z, p)
-const sph = (r, c, x, y, z, p, ws = 10, hs = 8) => mesh(geo(`s${r},${ws},${hs}`, () => new THREE.SphereGeometry(r, ws, hs)), M(c), x, y, z, p)
+const cyl = (r1, r2, h, c, x, y, z, p = ROOT, seg = 8) => mesh(geo(`c${r1},${r2},${h},${seg}`, () => new THREE.CylinderGeometry(r1, r2, h, seg)), M(c), x, y, z, p)
+const sph = (r, c, x, y, z, p = ROOT, ws = 10, hs = 8) => mesh(geo(`s${r},${ws},${hs}`, () => new THREE.SphereGeometry(r, ws, hs)), M(c), x, y, z, p)
 function canvasTex(w, h, draw) {
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h
   const g = cv.getContext('2d'); draw(g, w, h)
@@ -66,142 +73,254 @@ function canvasTex(w, h, draw) {
 const FONT = 'system-ui, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif'
 
 // ---------------------------------------------------------------- the street (z from -13 at the back to 22 at the entrance)
+// Everything that belongs to one city is built into `world` by buildCity() and thrown away when the player flies on.
 const Z0 = -13.4, Z1 = 22.5, XW = 5.9
-const ground = mesh(new THREE.PlaneGeometry(60, 90), mat(0x3e3546), 0, 0, 5); ground.rotation.x = -Math.PI / 2
-for (let z = -14; z <= 24; z += 2) { const l = mesh(new THREE.PlaneGeometry(12.4, 0.06), basic(0x3a3950), 0, 0.005, z); l.rotation.x = -Math.PI / 2 }
-for (const x of [-6.35, 6.35]) box(0.3, 0.18, 40, 0x55536a, x, 0.09, 5)
-// buildings sized for people: shops on the ground floor, lit windows above; few of them so phones stay fast
 const winGeo = new THREE.PlaneGeometry(0.8, 1.0)
 const winOn = [0xffd98a, 0xffe7b0, 0xffb877].map((c) => new THREE.MeshBasicMaterial({ color: c })), winOff = new THREE.MeshBasicMaterial({ color: 0x2a2f55 })
-const shopSigns = [0xff5d8f, 0x7fe3ff, 0xffd23f, 0x9cff7a]
-function building(x, z, w, d, h, c, face) {
+function building(x, z, w, d, h, c, face, signCols) {
   box(w, h, d, c, x, h / 2, z)
   const along = face === 'z' ? w : d, cols = Math.floor(along / 1.4), rows = Math.floor((h - 3) / 1.7)
   const sx = x < 0 ? 1 : -1
   const put = (m, u, y) => {
     if (face === 'z') m.position.set(x - w / 2 + 0.7 + u * 1.4, y, z + d / 2 + 0.01)
     else { m.position.set(x + sx * (w / 2 + 0.01), y, z - d / 2 + 0.7 + u * 1.4); m.rotation.y = sx * Math.PI / 2 }
-    scene.add(m)
+    ROOT.add(m)
   }
   for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) put(new THREE.Mesh(winGeo, Math.random() < 0.6 ? pick(winOn) : winOff), i, 3.4 + j * 1.7)
   // a glowing shop sign strip on the ground floor
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(along * 0.8, 0.45), basic(pick(shopSigns)))
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(along * 0.8, 0.45), basic(pick(signCols)))
   if (face === 'z') sign.position.set(x, 2.6, z + d / 2 + 0.02); else { sign.position.set(x + sx * (w / 2 + 0.02), 2.6, z); sign.rotation.y = sx * Math.PI / 2 }
-  scene.add(sign)
+  ROOT.add(sign)
 }
-const bcols = [0x3b3460, 0x463a5e, 0x33405f, 0x4a3550, 0x3d3a52]
-building(-4.6, -15.8, 4.4, 3, 7, bcols[0], 'z'); building(0, -16.2, 4.8, 3, 5.5, bcols[1], 'z'); building(4.7, -15.8, 4.4, 3, 6.5, bcols[2], 'z')
-for (let z = -11; z < 26; z += 7.2) { building(-8.6, z, 4, 7, rnd(6, 10), pick(bcols), 'x'); building(8.6, z, 4, 7, rnd(6, 10), pick(bcols), 'x') }
-
-// Namsan with its tower far behind the street (shape from AI Invasion's Seoul landmark), lit up at night
-function namsan() {
-  const g = new THREE.Group(), CON = 0xeeeeea
-  cyl(26, 34, 14, 0x23402c, 0, 7, 0, g, 18); cyl(16, 26, 10, 0x2a4a33, 0, 18, 0, g, 16); cyl(7, 16, 6, 0x30553a, 0, 26, 0, g, 14)
-  cyl(0.9, 1.6, 20, new THREE.MeshLambertMaterial({ color: CON, emissive: 0x33334a }), 0, 39, 0, g, 12)
-  cyl(3.4, 3.4, 1.4, CON, 0, 49.3, 0, g, 20)
-  cyl(3.6, 3.6, 1.4, basic(0x9fd8ff), 0, 50.7, 0, g, 20)
-  cyl(3.3, 3.3, 1.2, CON, 0, 52, 0, g, 20)
-  for (let k = 0; k < 6; k++) cyl(0.5 - k * 0.05, 0.5 - k * 0.05, 2.2, k % 2 ? mat(CON) : basic(0xff5a4a), 0, 54.7 + k * 2.2, 0, g, 8)
-  const tip = sph(0.6, basic(0xff3030), 0, 68, 0, g, 8, 6)
-  g.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.fog = false } })
-  g.position.set(14, 0, -95); scene.add(g)
-  return { g, tip }
+const noFog = (g) => g.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.fog = false } })
+// ---- landmarks, far behind the street, lit at night; each returns { g, tip } (the tip blinks)
+const LANDMARK = {
+  // Namsan with its tower (shape from AI Invasion's Seoul landmark)
+  seoul() {
+    const g = new THREE.Group(), CON = 0xeeeeea
+    cyl(26, 34, 14, 0x23402c, 0, 7, 0, g, 18); cyl(16, 26, 10, 0x2a4a33, 0, 18, 0, g, 16); cyl(7, 16, 6, 0x30553a, 0, 26, 0, g, 14)
+    cyl(0.9, 1.6, 20, new THREE.MeshLambertMaterial({ color: CON, emissive: 0x33334a }), 0, 39, 0, g, 12)
+    cyl(3.4, 3.4, 1.4, CON, 0, 49.3, 0, g, 20); cyl(3.6, 3.6, 1.4, basic(0x9fd8ff), 0, 50.7, 0, g, 20); cyl(3.3, 3.3, 1.2, CON, 0, 52, 0, g, 20)
+    for (let k = 0; k < 6; k++) cyl(0.5 - k * 0.05, 0.5 - k * 0.05, 2.2, k % 2 ? mat(CON) : basic(0xff5a4a), 0, 54.7 + k * 2.2, 0, g, 8)
+    return { g, tip: sph(0.6, basic(0xff3030), 0, 68, 0, g, 8, 6) }
+  },
+  // Tokyo Tower: an orange and white lattice, two decks, lit warm
+  tokyo() {
+    const g = new THREE.Group(), OR = basic(0xff5a1e), WH = basic(0xfff3e6)
+    const segs = [[9, 6.4, 10], [6.4, 4.2, 10], [4.2, 2.6, 9], [2.6, 1.6, 8], [1.6, 0.9, 8], [0.9, 0.5, 7], [0.5, 0.25, 7]]
+    let y = 0
+    segs.forEach(([r0, r1, h], i) => {
+      const m = cyl(r1, r0, h, i % 2 ? WH : OR, 0, y + h / 2, 0, g, 4); m.rotation.y = Math.PI / 4
+      // the open lattice: a darker core makes the four legs read
+      if (i < 2) cyl(r1 * 0.55, r0 * 0.62, h * 1.01, basic(0x1a1430), 0, y + h / 2, 0, g, 4).rotation.y = Math.PI / 4
+      y += h
+    })
+    cyl(4.6, 4.6, 2.2, basic(0xfff0c8), 0, 20.5, 0, g, 8); cyl(2.2, 2.2, 1.2, basic(0xfff0c8), 0, 39, 0, g, 8)
+    cyl(0.12, 0.2, 9, OR, 0, y + 4.5, 0, g, 6)
+    return { g, tip: sph(0.6, basic(0xff3030), 0, y + 9.2, 0, g, 8, 6) }
+  },
+  // Wat Arun: a tall white prang with gold bands and four small prangs, flood-lit
+  bangkok() {
+    const g = new THREE.Group(), WH = new THREE.MeshLambertMaterial({ color: 0xf4ead8, emissive: 0x6a5a3a }), GO = basic(0xffc94a)
+    box(30, 3, 30, 0x5a4a3a, 0, 1.5, 0, g); box(22, 3, 22, WH, 0, 4.5, 0, g)
+    const prang = (x, z, s) => {
+      let y = 6 * (s < 1 ? 0.7 : 1); const parts = [[6, 5, 6], [5, 3.6, 7], [3.6, 2.4, 7], [2.4, 1.4, 6], [1.4, 0.6, 5], [0.6, 0.15, 6]]
+      parts.forEach(([r0, r1, h], i) => { cyl(r1 * s, r0 * s, h * s, i % 2 ? GO : WH, x, y + h * s / 2, z, g, 12); y += h * s })
+      return y
+    }
+    const top = prang(0, 0, 1)
+    for (const [x, z] of [[-11, -11], [11, -11], [-11, 11], [11, 11]]) prang(x, z, 0.45)
+    return { g, tip: sph(0.5, basic(0xfff3a0), 0, top + 0.3, 0, g, 8, 6) }
+  },
+  // Taipei 101: eight stacked flaring blocks of green glass on a base, a spire
+  taipei() {
+    const g = new THREE.Group(), GL = new THREE.MeshLambertMaterial({ color: 0x3fa89a, emissive: 0x0f4a44 }), LINE = basic(0x9fffe8)
+    box(14, 14, 14, GL, 0, 7, 0, g)
+    let y = 14
+    for (let k = 0; k < 8; k++) { const m = cyl(6.4, 4.8, 6, GL, 0, y + 3, 0, g, 4); m.rotation.y = Math.PI / 4; cyl(6.5, 6.5, 0.25, LINE, 0, y + 5.9, 0, g, 4).rotation.y = Math.PI / 4; y += 6 }
+    box(5, 5, 5, GL, 0, y + 2.5, 0, g); cyl(0.3, 0.6, 12, 0xd8e0e0, 0, y + 11, 0, g, 6)
+    return { g, tip: sph(0.6, basic(0xff3030), 0, y + 17.4, 0, g, 8, 6) }
+  },
 }
-const tower = namsan()
-// a few far towers so the skyline reads as Seoul at night
-for (const [x, z, h] of [[-30, -80, 34], [-14, -88, 24], [34, -84, 40], [-44, -70, 18]]) { box(7, h, 7, 0x24284a, x, h / 2, z); for (let k = 0; k < h / 3; k++) if (Math.random() < 0.7) box(5, 0.4, 0.1, basic(0xffd98a), x, 2 + k * 3, z + 3.56) }
-
 // warm pools of light on the street (painted, not real lights, so phones stay fast)
 const glowTex = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, 'rgba(255,196,110,.62)'); r.addColorStop(0.55, 'rgba(255,160,80,.22)'); r.addColorStop(1, 'rgba(255,140,60,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128) }).tex
 const glowMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false })
 const glow = (x, z, r) => { const m = mesh(geo('glow', () => new THREE.PlaneGeometry(1, 1)), glowMat, x, 0.011, z); m.rotation.x = -Math.PI / 2; m.scale.set(r * 2, r * 2, 1); return m }
-for (const z of [-9, -3, 3, 9, 15]) for (const x of [-3.2, 0, 3.2]) glow(x, z, 2.6)
-// street furniture on the sides: plastic tables and stools, beer crates, lamp posts (outside the walking area)
-const sideBlocks = []
-const stoolCols = [0xe8412f, 0x2f7de8, 0xe8412f, 0x35b36b]
-for (const [x, z, n] of [[-5.3, -1.6, 0], [5.3, -1.2, 1], [-5.3, 10.4, 2], [5.3, 10.8, 3], [-5.3, 17.5, 1], [5.3, 18.2, 0]]) {
-  cyl(0.42, 0.42, 0.06, stoolCols[n], x, 0.7, z, scene, 12); cyl(0.06, 0.06, 0.68, 0x9a9aa8, x, 0.35, z, scene, 6)
-  for (const dz of [-0.75, 0.75]) { cyl(0.2, 0.17, 0.42, stoolCols[(n + 1) % 4], x, 0.21, z + dz, scene, 10) }
-  if (n % 2) { box(0.22, 0.32, 0.22, 0x2a8a3a, x + 0.12, 0.89, z + 0.1); box(0.1, 0.1, 0.1, 0xffffff, x - 0.12, 0.78, z - 0.12) }
-  else { cyl(0.16, 0.16, 0.06, 0xfaf3e6, x, 0.76, z, scene, 10); cyl(0.12, 0.12, 0.04, 0xd8341e, x, 0.8, z, scene, 10) }
-  // a paper cup of eomuk skewers
-  cyl(0.08, 0.06, 0.18, 0xffffff, x - 0.05, 0.82, z + 0.45, scene, 8)
-  for (const [dx, r] of [[-0.02, 0.15], [0.02, -0.12], [0, 0.02]]) { const st = cyl(0.012, 0.012, 0.42, 0xc8a26b, x - 0.05 + dx, 0.98, z + 0.45, scene, 4); st.rotation.z = r }
-  sideBlocks.push([x, z, 0.9, 2.1])
-}
-for (const [x, z] of [[-5.4, 5.6], [5.4, 5.2], [-5.4, 22.5], [5.4, 21.6]]) { box(0.6, 0.45, 0.45, 0x2a8a3a, x, 0.23, z); box(0.6, 0.45, 0.45, 0xffb000, x, 0.68, z, scene); sideBlocks.push([x, z, 0.6, 0.45]) }
-for (const [x, z] of [[-6.15, -7], [6.15, 3.5], [-6.15, 13.5], [6.15, 20]]) {
-  cyl(0.07, 0.09, 3.6, 0x30303c, x, 1.8, z, scene, 6); const arm = box(0.9, 0.06, 0.06, 0x30303c, x - Math.sign(x) * 0.42, 3.55, z)
-  sph(0.2, basic(0xffe2a0), x - Math.sign(x) * 0.85, 3.4, z, scene, 8, 6); glow(x - Math.sign(x) * 1.2, z, 2.2)
-}
-
-// ---------------------------------------------------------------- Seoul street dressing (11-14 user "그 나라 여행 간 느낌")
-// vertical Hangul neon boards sticking out of the buildings (plain shop words, no brands), utility poles with sagging wires,
-// flyers on the walls, a delivery scooter, paper cups of skewers on the tables. City data: strings.js CITY.seoul.boards.
-function vSign(text, bg, fg, x, y, z) {
-  const n = [...text].length
-  const { tex } = canvasTex(96, 64 + n * 84, (g, W, H) => {
+// vertical neon boards sticking out of the buildings (plain shop words, no brands); Thai is written across, never stacked
+function vSign(text, bg, fg, x, y, z, across) {
+  const n = across ? 1 : [...text].length
+  const W0 = across ? 96 + Math.min(360, text.length * 30) : 96, H0 = across ? 120 : 64 + n * 84
+  const { tex } = canvasTex(W0, H0, (g, W, H) => {
     g.fillStyle = bg; g.beginPath(); g.roundRect(4, 4, W - 8, H - 8, 10); g.fill()
     g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 4; g.beginPath(); g.roundRect(10, 10, W - 20, H - 20, 8); g.stroke()
-    g.fillStyle = fg; g.font = `900 70px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'
-    ;[...text].forEach((ch, i) => g.fillText(ch, W / 2, 32 + 42 + i * 84))
+    g.fillStyle = fg; g.font = `900 ${across ? 56 : 70}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'
+    if (across) g.fillText(text, W / 2, H / 2 + 4, W - 30); else [...text].forEach((ch, i) => g.fillText(ch, W / 2, 32 + 42 + i * 84))
   })
-  const h = 0.55 * (64 + n * 84) / 96
-  const m = mesh(new THREE.PlaneGeometry(0.55, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }), x, y, z)
+  const w = 0.55 * W0 / 96, h = 0.55 * H0 / 96
+  const m = mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }), x, y, z)
+  if (across) m.rotation.y = x < 0 ? Math.PI / 2 : -Math.PI / 2
   box(0.04, 0.04, 0.5, 0x30303c, x, y + h / 2 - 0.1, z - 0.25); box(0.04, 0.04, 0.5, 0x30303c, x, y - h / 2 + 0.1, z - 0.25)
   return m
-}
-const BOARD_COLS = [['#d8261e', '#fff6d0'], ['#1d3f8a', '#ffe14a'], ['#ffd23f', '#c0161b'], ['#1b8a4a', '#ffffff'], ['#ff5d8f', '#ffffff'], ['#6a2fb8', '#7fe3ff']]
-city.boards.forEach((w, i) => {
-  const side = i % 2 ? 1 : -1, z = -10 + Math.floor(i / 2) * 5.6 + (side > 0 ? 2.4 : 0), [bg, fg] = BOARD_COLS[i % BOARD_COLS.length]
-  vSign(w, bg, fg, side * 6.25, 4.2 + (i % 3) * 0.5, z)
-})
-// utility poles with crossarms, wires sagging between them and across the street
-const poleTops = []
-for (const [x, z] of [[-6.05, -4.5], [6.05, -0.5], [-6.05, 8.6], [6.05, 12.4], [-6.05, 19.8]]) {
-  cyl(0.11, 0.14, 6.4, 0x8a8478, x, 3.2, z, scene, 7)
-  box(1.3, 0.1, 0.1, 0x6a645a, x, 5.9, z); box(1.0, 0.1, 0.1, 0x6a645a, x, 5.4, z)
-  cyl(0.18, 0.18, 0.5, 0x5a5f6a, x - Math.sign(x) * 0.25, 4.9, z, scene, 8)
-  poleTops.push({ x, z })
 }
 const wireMat = new THREE.LineBasicMaterial({ color: 0x0c0c12 })
 function wire(a, b, sag, dy = 0) {
   const pts = []
   for (let i = 0; i <= 16; i++) { const u = i / 16; pts.push(new THREE.Vector3(a.x + (b.x - a.x) * u, 5.85 + dy - Math.sin(Math.PI * u) * sag, a.z + (b.z - a.z) * u)) }
-  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat))
+  ROOT.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat))
 }
-for (let i = 0; i < poleTops.length - 1; i++) for (const [s, dy] of [[0.5, 0], [0.8, -0.45], [0.35, 0.05]]) wire(poleTops[i], poleTops[i + 1], s, dy)
-for (const p of poleTops) wire(p, { x: -p.x * 1.4, z: p.z + 1.5 }, 0.9, -0.2)
-// flyers on the walls next to the street
 const flyerTex = [['#ffffff', '#d8261e'], ['#ffe14a', '#1d3f8a'], ['#7fe3ff', '#1b1530'], ['#ffb0c8', '#6a2fb8']].map(([bg, fg]) => canvasTex(64, 90, (g) => { g.fillStyle = bg; g.fillRect(0, 0, 64, 90); g.fillStyle = fg; g.fillRect(6, 8, 52, 18); for (let k = 0; k < 5; k++) g.fillRect(8, 34 + k * 10, 30 + ((k * 13) % 18), 4) }).tex)
-for (let k = 0; k < 18; k++) {
-  const side = k % 2 ? 1 : -1, z = -11 + k * 1.9 + rnd(-0.3, 0.3)
-  const f = mesh(geo('flyer', () => new THREE.PlaneGeometry(0.42, 0.6)), new THREE.MeshBasicMaterial({ map: flyerTex[k % 4] }), side * 6.58, rnd(1.0, 1.9), z)
-  f.rotation.y = -side * Math.PI / 2; f.rotation.z = rnd(-0.12, 0.12)
+const bulbGeo = new THREE.SphereGeometry(0.11, 8, 6)
+// a parked two-wheeler (Seoul: delivery box; Taipei: plain scooters in a row)
+function scooter(x, z, ry, col, boxed) {
+  const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; ROOT.add(g)
+  for (const dz of [-0.55, 0.55]) { const w = cyl(0.26, 0.26, 0.12, 0x15151c, 0, 0.26, dz, g, 12); w.rotation.z = Math.PI / 2 }
+  box(0.36, 0.3, 1.0, col, 0, 0.5, 0, g); box(0.3, 0.12, 0.5, 0x1d1b26, 0, 0.72, 0.15, g)
+  const c = box(0.08, 0.7, 0.08, 0x9a9aa8, 0, 0.85, -0.5, g); c.rotation.x = -0.3
+  box(0.7, 0.05, 0.05, 0x1d1b26, 0, 1.18, -0.6, g)
+  if (boxed) { box(0.56, 0.48, 0.5, 0xfff2d0, 0, 1.03, 0.45, g); box(0.5, 0.1, 0.02, 0xd8261e, 0, 1.1, 0.71, g) }
+  return g
 }
-// a delivery scooter parked at the side, box on the back
-{
-  const g = new THREE.Group(); g.position.set(-5.3, 0, 7.4); g.rotation.y = 0.15; scene.add(g)
-  for (const z of [-0.55, 0.55]) { const w = cyl(0.26, 0.26, 0.12, 0x15151c, 0, 0.26, z, g, 12); w.rotation.z = Math.PI / 2 }
-  box(0.36, 0.3, 1.0, 0xd8261e, 0, 0.5, 0, g); box(0.3, 0.12, 0.5, 0x1d1b26, 0, 0.72, 0.15, g)
-  const col = box(0.08, 0.7, 0.08, 0x9a9aa8, 0, 0.85, -0.5, g); col.rotation.x = -0.3
-  box(0.7, 0.05, 0.05, 0x1d1b26, 0, 1.18, -0.6, g); box(0.56, 0.48, 0.5, 0xfff2d0, 0, 1.03, 0.45, g); box(0.5, 0.1, 0.02, 0xd8261e, 0, 1.1, 0.71, g)
-  sideBlocks.push([-5.3, 7.4, 0.6, 1.4])
+// a round paper lantern that glows (Tokyo akachochin, Taipei red lanterns)
+function lantern(x, y, z, col, s = 1) {
+  const l = sph(0.26 * s, new THREE.MeshLambertMaterial({ color: col, emissive: col }), x, y, z, ROOT, 10, 8); l.scale.y = 1.3
+  cyl(0.18 * s, 0.18 * s, 0.06, 0x1d1b26, x, y + 0.34 * s, z, ROOT, 8); cyl(0.18 * s, 0.18 * s, 0.06, 0x1d1b26, x, y - 0.34 * s, z, ROOT, 8)
+  return l
 }
-
-// string lights across the street
-const bulbGeo = new THREE.SphereGeometry(0.11, 8, 6), bulbCols = [0xffd36b, 0xff7aa8, 0x7fe3ff, 0xffb35c], bulbs = []
-for (const z of [-9, -3, 3, 9, 15]) {
-  const pts = []
-  for (let i = 0; i <= 24; i++) { const u = i / 24; pts.push(new THREE.Vector3(-6.3 + 12.6 * u, 4.6 - Math.sin(Math.PI * u) * 1.1, z + Math.sin(u * 6) * 0.15)) }
-  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x111111 })))
-  for (let i = 1; i < 24; i++) { const b = mesh(bulbGeo, basic(bulbCols[i % 4]), pts[i].x, pts[i].y - 0.14, pts[i].z); b.userData.base = bulbCols[i % 4]; bulbs.push(b) }
+// per city: colours and the things that make the street that country (TODO.md 'travel feel' table)
+const LOOK = {
+  seoul: { sky: 0x141a3a, ground: 0x3e3546, bcols: [0x3b3460, 0x463a5e, 0x33405f, 0x4a3550, 0x3d3a52], signs: [0xff5d8f, 0x7fe3ff, 0xffd23f, 0x9cff7a], bulbs: [0xffd36b, 0xff7aa8, 0x7fe3ff, 0xffb35c], stools: [0xe8412f, 0x2f7de8, 0xe8412f, 0x35b36b], tents: [0xff7a2a, 0xff5a3a, 0xff8a2a, 0xff6a2a], tentA: 0.62 },
+  tokyo: { sky: 0x121a36, ground: 0x3a3a48, bcols: [0x34364f, 0x3c3550, 0x2e3a52, 0x423448, 0x383848], signs: [0xff3d3d, 0xfff3e6, 0x7fe3ff, 0xffd23f], bulbs: [0xff4a3a, 0xff4a3a, 0xffd36b, 0xff4a3a], stools: [0xffc21a, 0x2f7de8, 0xffc21a, 0x2f7de8], tents: [0x8a5a33, 0x7a4a2a, 0x8a5a33, 0x7a4a2a], tentA: 1 },
+  bangkok: { sky: 0x1c1638, ground: 0x45384a, bcols: [0x3b3a5e, 0x4a3a58, 0x3a4458, 0x523a4c, 0x3e3e50], signs: [0xff5dc8, 0x6cff8a, 0xffd23f, 0xff8a3a], bulbs: [0xff5dc8, 0x6cff8a, 0xffd23f, 0x7fe3ff], stools: [0x2f7de8, 0xe8412f, 0x35b36b, 0xff5dc8], tents: [0x2fb36b, 0xff5dc8, 0x2f7de8, 0xffb000], tentA: 0.75 },
+  taipei: { sky: 0x1a1430, ground: 0x3e3444, bcols: [0x3a3050, 0x48344e, 0x34385a, 0x4e3048, 0x3a3448], signs: [0xff3d3d, 0xffd23f, 0x7fe3ff, 0xff8acf], bulbs: [0xff3d3d, 0xffd23f, 0xff3d3d, 0xffb35c], stools: [0xe8412f, 0xffffff, 0xe8412f, 0x2f7de8], tents: [0xd8261e, 0xffb000, 0xd8261e, 0xffb000], tentA: 0.7 },
+}
+let tower = null, bulbs = [], sideBlocks = [], train = null
+function buildStreet() {
+  const L = LOOK[cityId]
+  SKY.setHex(L.sky); scene.fog.color.setHex(L.sky)
+  const ground = mesh(geo('ground', () => new THREE.PlaneGeometry(60, 90)), mat(L.ground), 0, 0, 5); ground.rotation.x = -Math.PI / 2
+  for (let z = -14; z <= 24; z += 2) { const l = mesh(geo('dash', () => new THREE.PlaneGeometry(12.4, 0.06)), basic(0x3a3950), 0, 0.005, z); l.rotation.x = -Math.PI / 2 }
+  for (const x of [-6.35, 6.35]) box(0.3, 0.18, 40, 0x55536a, x, 0.09, 5)
+  // buildings sized for people: shops on the ground floor, lit windows above; few of them so phones stay fast
+  building(-4.6, -15.8, 4.4, 3, 7, L.bcols[0], 'z', L.signs); building(0, -16.2, 4.8, 3, 5.5, L.bcols[1], 'z', L.signs); building(4.7, -15.8, 4.4, 3, 6.5, L.bcols[2], 'z', L.signs)
+  for (let z = -11; z < 26; z += 7.2) { building(-8.6, z, 4, 7, rnd(6, 10), pick(L.bcols), 'x', L.signs); building(8.6, z, 4, 7, rnd(6, 10), pick(L.bcols), 'x', L.signs) }
+  const lm = LANDMARK[cityId](); noFog(lm.g); lm.g.position.set(14, 0, -95); ROOT.add(lm.g); tower = lm
+  // a few far towers so the skyline reads as a city at night
+  for (const [x, z, h] of [[-30, -80, 34], [-14, -88, 24], [34, -84, 40], [-44, -70, 18]]) { box(7, h, 7, 0x24284a, x, h / 2, z); for (let k = 0; k < h / 3; k++) if (Math.random() < 0.7) box(5, 0.4, 0.1, basic(0xffd98a), x, 2 + k * 3, z + 3.56) }
+  for (const z of [-9, -3, 3, 9, 15]) for (const x of [-3.2, 0, 3.2]) glow(x, z, 2.6)
+  // street furniture on the sides: tables and stools, crates, lamp posts (outside the walking area)
+  sideBlocks = []
+  for (const [x, z, n] of [[-5.3, -1.6, 0], [5.3, -1.2, 1], [-5.3, 10.4, 2], [5.3, 10.8, 3], [-5.3, 17.5, 1], [5.3, 18.2, 0]]) {
+    cyl(0.42, 0.42, 0.06, L.stools[n], x, 0.7, z, ROOT, 12); cyl(0.06, 0.06, 0.68, 0x9a9aa8, x, 0.35, z, ROOT, 6)
+    for (const dz of [-0.75, 0.75]) {
+      if (cityId === 'tokyo') { box(0.42, 0.36, 0.32, L.stools[(n + 1) % 4], x, 0.18, z + dz) } // beer crates for stools
+      else cyl(0.2, 0.17, 0.42, L.stools[(n + 1) % 4], x, 0.21, z + dz, ROOT, 10)
+    }
+    TABLE_TOP[cityId](x, z, n)
+    sideBlocks.push([x, z, 0.9, 2.1])
+  }
+  for (const [x, z] of [[-5.4, 5.6], [5.4, 5.2], [-5.4, 22.5], [5.4, 21.6]]) { box(0.6, 0.45, 0.45, 0x2a8a3a, x, 0.23, z); box(0.6, 0.45, 0.45, 0xffb000, x, 0.68, z); sideBlocks.push([x, z, 0.6, 0.45]) }
+  for (const [x, z] of [[-6.15, -7], [6.15, 3.5], [-6.15, 13.5], [6.15, 20]]) {
+    cyl(0.07, 0.09, 3.6, 0x30303c, x, 1.8, z, ROOT, 6); box(0.9, 0.06, 0.06, 0x30303c, x - Math.sign(x) * 0.42, 3.55, z)
+    sph(0.2, basic(0xffe2a0), x - Math.sign(x) * 0.85, 3.4, z, ROOT, 8, 6); glow(x - Math.sign(x) * 1.2, z, 2.2)
+  }
+  // shop boards in the city's own writing
+  city.boards.forEach((w, i) => {
+    const side = i % 2 ? 1 : -1, z = -10 + Math.floor(i / 2) * 5.6 + (side > 0 ? 2.4 : 0), [bg, fg] = BOARD_COLS[(i + CITY_ORDER.indexOf(cityId)) % BOARD_COLS.length]
+    vSign(w, bg, fg, side * 6.25, 4.2 + (i % 3) * 0.5, z, cityId === 'bangkok')
+  })
+  // utility poles with crossarms, wires sagging between them and across the street
+  const poleTops = []
+  for (const [x, z] of [[-6.05, -4.5], [6.05, -0.5], [-6.05, 8.6], [6.05, 12.4], [-6.05, 19.8]]) {
+    cyl(0.11, 0.14, 6.4, 0x8a8478, x, 3.2, z, ROOT, 7)
+    box(1.3, 0.1, 0.1, 0x6a645a, x, 5.9, z); box(1.0, 0.1, 0.1, 0x6a645a, x, 5.4, z)
+    cyl(0.18, 0.18, 0.5, 0x5a5f6a, x - Math.sign(x) * 0.25, 4.9, z, ROOT, 8)
+    poleTops.push({ x, z })
+  }
+  const wires = cityId === 'bangkok' ? [[0.5, 0], [0.8, -0.45], [0.35, 0.05], [0.65, -0.25], [0.95, -0.6]] : [[0.5, 0], [0.8, -0.45], [0.35, 0.05]] // Bangkok: wire bundles
+  for (let i = 0; i < poleTops.length - 1; i++) for (const [s, dy] of wires) wire(poleTops[i], poleTops[i + 1], s, dy)
+  for (const p of poleTops) wire(p, { x: -p.x * 1.4, z: p.z + 1.5 }, 0.9, -0.2)
+  // flyers on the walls next to the street
+  for (let k = 0; k < 18; k++) {
+    const side = k % 2 ? 1 : -1, z = -11 + k * 1.9 + rnd(-0.3, 0.3)
+    const f = mesh(geo('flyer', () => new THREE.PlaneGeometry(0.42, 0.6)), new THREE.MeshBasicMaterial({ map: flyerTex[k % 4] }), side * 6.58, rnd(1.0, 1.9), z)
+    f.rotation.y = -side * Math.PI / 2; f.rotation.z = rnd(-0.12, 0.12)
+  }
+  // string lights (Tokyo and Taipei: paper lanterns) across the street
+  bulbs = []
+  for (const z of [-9, -3, 3, 9, 15]) {
+    const pts = []
+    for (let i = 0; i <= 24; i++) { const u = i / 24; pts.push(new THREE.Vector3(-6.3 + 12.6 * u, 4.6 - Math.sin(Math.PI * u) * 1.1, z + Math.sin(u * 6) * 0.15)) }
+    ROOT.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x111111 })))
+    const lan = cityId === 'tokyo' || cityId === 'taipei'
+    for (let i = 2; i < 24; i += lan ? 5 : 1) {
+      const c = L.bulbs[i % 4]
+      const b = lan ? lantern(pts[i].x, pts[i].y - 0.3, pts[i].z, c, 0.6) : mesh(bulbGeo, basic(c), pts[i].x, pts[i].y - 0.14, pts[i].z)
+      b.material = b.material.clone(); b.userData.base = c; bulbs.push(b)
+    }
+  }
+  PROPS[cityId]()
+}
+const BOARD_COLS = [['#d8261e', '#fff6d0'], ['#1d3f8a', '#ffe14a'], ['#ffd23f', '#c0161b'], ['#1b8a4a', '#ffffff'], ['#ff5d8f', '#ffffff'], ['#6a2fb8', '#7fe3ff']]
+// what stands on the side tables
+const TABLE_TOP = {
+  seoul(x, z, n) {
+    if (n % 2) { box(0.22, 0.32, 0.22, 0x2a8a3a, x + 0.12, 0.89, z + 0.1); box(0.1, 0.1, 0.1, 0xffffff, x - 0.12, 0.78, z - 0.12) } // green bottle, shot glass
+    else { cyl(0.16, 0.16, 0.06, 0xfaf3e6, x, 0.76, z, ROOT, 10); cyl(0.12, 0.12, 0.04, 0xd8341e, x, 0.8, z, ROOT, 10) }
+    cyl(0.08, 0.06, 0.18, 0xffffff, x - 0.05, 0.82, z + 0.45, ROOT, 8) // a paper cup of eomuk skewers
+    for (const [dx, r] of [[-0.02, 0.15], [0.02, -0.12], [0, 0.02]]) { const st = cyl(0.012, 0.012, 0.42, 0xc8a26b, x - 0.05 + dx, 0.98, z + 0.45, ROOT, 4); st.rotation.z = r }
+  },
+  tokyo(x, z) { cyl(0.11, 0.09, 0.26, 0xffd23f, x + 0.12, 0.86, z, ROOT, 8); cyl(0.11, 0.11, 0.05, 0xffffff, x + 0.12, 1.0, z, ROOT, 8); cyl(0.2, 0.12, 0.12, 0xd8341e, x - 0.15, 0.79, z + 0.2, ROOT, 10) }, // beer mug, ramen bowl
+  bangkok(x, z) { cyl(0.17, 0.12, 0.1, 0x2fb36b, x, 0.78, z, ROOT, 10); for (const c of [0xffc21a, 0xff8a3a, 0xff5dc8]) sph(0.07, c, x + rnd(-0.1, 0.1), 0.86, z + rnd(-0.08, 0.08), ROOT, 6, 5) }, // fruit in a basket
+  taipei(x, z) { for (const dx of [-0.12, 0.14]) { cyl(0.08, 0.065, 0.24, 0xc89a6a, x + dx, 0.85, z + 0.1, ROOT, 8); const st = cyl(0.015, 0.015, 0.2, 0xff5d8f, x + dx, 1.03, z + 0.1, ROOT, 4); st.rotation.z = 0.2 } }, // bubble tea cups
+}
+// the city's own things on the street (8 or more in the first screen; buttons never change)
+const PROPS = {
+  seoul() { scooter(-5.3, 7.4, 0.15, 0xd8261e, true); sideBlocks.push([-5.3, 7.4, 0.6, 1.4]) },
+  tokyo() {
+    // the elevated railway across the back of the street; a train runs over it (the twist: commuters come in a group)
+    for (const x of [-5, 0, 5]) box(0.6, 5.2, 0.6, 0x5a5a66, x, 2.6, -14.4)
+    box(14, 0.6, 1.4, 0x6a6a78, 0, 5.4, -14.4); box(14, 0.4, 0.08, 0x3a3a46, 0, 5.85, -13.72)
+    train = new THREE.Group(); ROOT.add(train); train.position.set(-30, 6.4, -14.4)
+    for (let k = 0; k < 3; k++) { box(4.6, 1.3, 1.2, 0xe8eef2, k * 4.8, 0, 0, train); box(4.6, 0.18, 1.22, 0x2fb36b, k * 4.8, -0.25, 0, train); for (let w = 0; w < 4; w++) box(0.7, 0.45, 0.02, basic(0xfff3c0), k * 4.8 - 1.6 + w * 1.05, 0.2, 0.62, train) }
+    // vending machines glowing at the sides, bicycles, red lanterns on the posts
+    for (const [x, z, c] of [[-5.5, 7.0, 0xe8412f], [5.5, 7.6, 0x2f7de8], [-5.5, 15.4, 0xffffff]]) {
+      box(0.9, 1.9, 0.7, c, x, 0.95, z); box(0.04, 1.2, 0.6, basic(0xeaf6ff), x - Math.sign(x) * 0.46, 1.15, z); for (let k = 0; k < 3; k++) box(0.04, 0.12, 0.5, basic([0xff5d8f, 0x7fe3ff, 0xffd23f][k]), x - Math.sign(x) * 0.47, 0.75 + k * 0.32, z)
+      sideBlocks.push([x, z, 0.9, 0.7])
+    }
+    for (const [x, z] of [[5.4, 15.6], [5.3, 16.6]]) { const g = new THREE.Group(); g.position.set(x, 0, z); ROOT.add(g); for (const dz of [-0.45, 0.45]) { const w = cyl(0.3, 0.3, 0.04, 0x15151c, 0, 0.3, dz, g, 14); w.rotation.z = Math.PI / 2 } box(0.05, 0.05, 0.9, 0x2f7de8, 0, 0.5, 0, g); box(0.05, 0.4, 0.05, 0x2f7de8, 0, 0.6, -0.3, g); box(0.3, 0.05, 0.05, 0x1d1b26, 0, 0.85, -0.4, g) }
+    sideBlocks.push([5.35, 16.1, 0.6, 2])
+    for (const [x, z] of [[-6.15, -7], [6.15, 3.5], [-6.15, 13.5], [6.15, 20]]) lantern(x - Math.sign(x) * 0.85, 2.7, z, 0xff3d2a, 1.2)
+  },
+  bangkok() {
+    // a tuk-tuk and a pink taxi parked at the side, parasols over the tables, flower garlands on the posts
+    const tuk = new THREE.Group(); tuk.position.set(-5.3, 0, 7.4); ROOT.add(tuk)
+    for (const [x, z] of [[0, -0.8], [-0.45, 0.6], [0.45, 0.6]]) { const w = cyl(0.24, 0.24, 0.12, 0x15151c, x, 0.24, z, tuk, 12); w.rotation.z = Math.PI / 2 }
+    box(1.1, 0.5, 1.6, 0x1f6fd8, 0, 0.6, 0.1, tuk); box(1.2, 0.08, 1.9, 0x2fb36b, 0, 1.7, 0.1, tuk); for (const [x, z] of [[-0.55, -0.7], [0.55, -0.7], [-0.55, 0.9], [0.55, 0.9]]) cyl(0.03, 0.03, 0.9, 0xd8d8e0, x, 1.25, z, tuk, 4)
+    box(0.9, 0.3, 0.5, 0xffc21a, 0, 0.95, 0.6, tuk); sideBlocks.push([-5.3, 7.4, 1.2, 2])
+    const taxi = new THREE.Group(); taxi.position.set(5.2, 0, 15.6); ROOT.add(taxi)
+    box(1.1, 0.55, 2.4, 0xff5dc8, 0, 0.55, 0, taxi); box(0.95, 0.45, 1.3, 0x2a2f55, 0, 1.05, 0.1, taxi); box(0.5, 0.15, 0.3, basic(0xfff3a0), 0, 1.35, 0.1, taxi)
+    for (const [x, z] of [[-0.55, -0.8], [0.55, -0.8], [-0.55, 0.8], [0.55, 0.8]]) { const w = cyl(0.24, 0.24, 0.14, 0x15151c, x, 0.24, z, taxi, 12); w.rotation.z = Math.PI / 2 }
+    sideBlocks.push([5.2, 15.6, 1.2, 2.5])
+    for (const [x, z, c] of [[-5.3, -1.6, 0xff5dc8], [5.3, -1.2, 0x2fb36b], [-5.3, 10.4, 0xffc21a], [5.3, 10.8, 0x2f7de8]]) { cyl(0.03, 0.03, 2.2, 0xd8d8e0, x, 1.1, z, ROOT, 4); cyl(0.05, 1.3, 0.45, c, x, 2.3, z, ROOT, 8) }
+    for (const [x, z] of [[-6.05, -4.5], [6.05, -0.5], [-6.05, 8.6], [6.05, 12.4]]) { const r = mesh(geo('garland', () => new THREE.TorusGeometry(0.28, 0.07, 6, 14)), mat(0xfff3c0, 0x5a5030), x, 2.2, z); r.rotation.y = Math.PI / 2; sph(0.09, 0xff5d8f, x, 1.88, z, ROOT, 6, 5) }
+    for (const [x, z] of [[-5.5, 15.4], [5.5, 7.4]]) { for (let k = 0; k < 3; k++) { cyl(0.3, 0.24, 0.2, 0x8a6a3a, x, 0.1 + k * 0.001, z - 0.6 + k * 0.6, ROOT, 10); for (let f = 0; f < 3; f++) sph(0.09, [0xffc21a, 0xff8a3a, 0x9cff7a][k], x + rnd(-0.12, 0.12), 0.26, z - 0.6 + k * 0.6 + rnd(-0.1, 0.1), ROOT, 6, 5) } sideBlocks.push([x, z, 0.7, 1.9]) }
+  },
+  taipei() {
+    // scooters parked in a row, a temple roof over the back, the night-market gate of red lanterns at the entrance
+    for (let k = 0; k < 4; k++) scooter(-5.3, 5.6 + k * 0.75, 1.3, pick([0xd8261e, 0x2f7de8, 0xffffff, 0x2fb36b]), false)
+    sideBlocks.push([-5.3, 6.7, 0.9, 3.4])
+    const roof = new THREE.Group(); roof.position.set(0, 5.6, -16.2); ROOT.add(roof)
+    const r = box(6.6, 0.3, 3.6, 0xd8341e, 0, 0.3, 0, roof); r.rotation.x = 0.0
+    for (const sx of [-1, 1]) { const e = box(0.8, 0.2, 3.4, 0xffc21a, sx * 3.4, 0.55, 0, roof); e.rotation.z = sx * -0.5 }
+    box(4.4, 0.6, 0.3, 0x1b8a4a, 0, 0.9, 0, roof); sph(0.3, basic(0xffd23f), 0, 1.4, 0, roof, 8, 6)
+    for (const x of [-5.6, 5.6]) for (let k = 0; k < 3; k++) lantern(x * 0.96, 3.6 - k * 0.8, 21.4, 0xff3d2a, 1)
+    for (const x of [-5.6, 5.6]) cyl(0.12, 0.12, 4.6, 0xd8261e, x, 2.3, 21.8, ROOT, 8)
+  },
 }
 
 // ---------------------------------------------------------------- obstacles + grid pathfinding (helpers and customers)
 const boxes = []
 const block = (x, z, w, d) => { const b = { x0: x - w / 2, z0: z - d / 2, x1: x + w / 2, z1: z + d / 2 }; boxes.push(b); return b }
-for (const b of sideBlocks) block(...b)
 const GX0 = -6, GZ0 = -14, CS = 0.5, GW = 24, GH = 76
 let grid = new Uint8Array(GW * GH)
 function buildGrid() {
@@ -318,18 +437,84 @@ function animate(rig, moving, dt, carrying) {
   rig.g.position.y = moving ? Math.abs(Math.sin(rig.phase)) * 0.06 : 0
 }
 
-// ---------------------------------------------------------------- food: raw goods and cooked food for the four stalls
-const ITEM = {
-  raw0: () => { const g = new THREE.Group(); cyl(0.17, 0.12, 0.12, 0xb9bec8, 0, 0.06, 0, g, 10); cyl(0.15, 0.15, 0.02, 0xf6ecd0, 0, 0.12, 0, g, 10); const w = cyl(0.012, 0.012, 0.26, 0x8a8f99, 0.05, 0.2, 0, g, 4); w.rotation.z = -0.5; return g }, // batter bowl
-  food0: () => { const g = new THREE.Group(); const b = sph(0.2, 0xb8701f, 0, 0.07, 0, g, 10, 6); b.scale.set(1, 0.42, 0.62); const tl = mesh(geo('cone', () => new THREE.ConeGeometry(0.1, 0.15, 3)), mat(0xa35f17), 0.24, 0.07, 0, g); tl.rotation.z = Math.PI / 2; for (const x of [-0.06, 0.05]) box(0.025, 0.03, 0.18, 0x8a4b10, x, 0.13, 0, g); sph(0.05, 0x6b2a2a, -0.13, 0.12, 0, g, 6, 4); return g }, // bungeoppang
-  raw1: () => { const g = new THREE.Group(); box(0.32, 0.07, 0.22, 0xf0d39a, 0, 0.04, 0, g); box(0.32, 0.05, 0.22, 0xe6c07e, 0, 0.1, 0, g); return g }, // fish-cake sheets
-  food1: () => { const g = new THREE.Group(); const st = cyl(0.015, 0.015, 0.5, 0xc8a26b, 0, 0.06, 0, g, 5); st.rotation.z = Math.PI / 2; for (const x of [-0.1, 0.06]) { const p = box(0.13, 0.05, 0.16, 0xe8b96a, x, 0.07, 0, g); p.rotation.x = 0.25 } return g }, // eomuk skewer
-  raw2: () => { const g = new THREE.Group(); for (const [x, z] of [[-0.08, -0.05], [0.05, 0], [-0.02, 0.07]]) { const r = cyl(0.04, 0.04, 0.3, 0xf6f1e4, x, 0.05, z, g, 6); r.rotation.z = Math.PI / 2 } return g }, // rice cakes
-  food2: () => { const g = new THREE.Group(); cyl(0.17, 0.13, 0.08, 0xffffff, 0, 0.04, 0, g, 10); cyl(0.15, 0.15, 0.04, 0xd8341e, 0, 0.09, 0, g, 10); for (const [x, z] of [[-0.06, 0], [0.05, 0.04], [0.03, -0.06]]) { const r = cyl(0.03, 0.03, 0.14, 0xff6a3d, x, 0.12, z, g, 5); r.rotation.z = Math.PI / 2 } return g }, // tteokbokki cup
-  raw3: () => { const g = new THREE.Group(); const b = sph(0.14, 0xf3ead8, 0, 0.08, 0, g, 8, 6); b.scale.y = 0.7; return g }, // dough ball
-  food3: () => { const g = new THREE.Group(); cyl(0.19, 0.19, 0.06, 0xc9862e, 0, 0.04, 0, g, 12); cyl(0.12, 0.12, 0.02, 0x7a3d12, 0, 0.08, 0, g, 10); return g }, // hotteok
+// ---------------------------------------------------------------- food: raw goods and cooked food, four stalls per city
+// The same models are the plates on the grills, the stacks Baekho carries, the big models on the stall roofs, and (drawn
+// once into a picture by foodPic) the icons in bubbles, the next-goal pill, the tasting card and the postcard.
+const G = () => new THREE.Group()
+const bowl = (g, c = 0xb9bec8, fill = 0xf6ecd0) => { cyl(0.17, 0.12, 0.12, c, 0, 0.06, 0, g, 10); cyl(0.15, 0.15, 0.02, fill, 0, 0.12, 0, g, 10); return g }
+const stick = (g, len = 0.5, c = 0xc8a26b) => { const st = cyl(0.015, 0.015, len, c, 0, 0.06, 0, g, 5); st.rotation.z = Math.PI / 2; return st }
+const ITEMS = {
+  seoul: {
+    raw0: () => { const g = bowl(G()); const w = cyl(0.012, 0.012, 0.26, 0x8a8f99, 0.05, 0.2, 0, g, 4); w.rotation.z = -0.5; return g }, // batter bowl
+    food0: () => { const g = G(); const b = sph(0.2, 0xb8701f, 0, 0.07, 0, g, 10, 6); b.scale.set(1, 0.42, 0.62); const tl = mesh(geo('cone', () => new THREE.ConeGeometry(0.1, 0.15, 3)), mat(0xa35f17), 0.24, 0.07, 0, g); tl.rotation.z = Math.PI / 2; for (const x of [-0.06, 0.05]) box(0.025, 0.03, 0.18, 0x8a4b10, x, 0.13, 0, g); sph(0.05, 0x6b2a2a, -0.13, 0.12, 0, g, 6, 4); return g }, // bungeoppang
+    raw1: () => { const g = G(); box(0.32, 0.07, 0.22, 0xf0d39a, 0, 0.04, 0, g); box(0.32, 0.05, 0.22, 0xe6c07e, 0, 0.1, 0, g); return g }, // fish-cake sheets
+    food1: () => { const g = G(); stick(g); for (const x of [-0.1, 0.06]) { const p = box(0.13, 0.05, 0.16, 0xe8b96a, x, 0.07, 0, g); p.rotation.x = 0.25 } return g }, // eomuk skewer
+    raw2: () => { const g = G(); for (const [x, z] of [[-0.08, -0.05], [0.05, 0], [-0.02, 0.07]]) { const r = cyl(0.04, 0.04, 0.3, 0xf6f1e4, x, 0.05, z, g, 6); r.rotation.z = Math.PI / 2 } return g }, // rice cakes
+    food2: () => { const g = G(); cyl(0.17, 0.13, 0.08, 0xffffff, 0, 0.04, 0, g, 10); cyl(0.15, 0.15, 0.04, 0xd8341e, 0, 0.09, 0, g, 10); for (const [x, z] of [[-0.06, 0], [0.05, 0.04], [0.03, -0.06]]) { const r = cyl(0.03, 0.03, 0.14, 0xff6a3d, x, 0.12, z, g, 5); r.rotation.z = Math.PI / 2 } return g }, // tteokbokki cup
+    raw3: () => { const g = G(); const b = sph(0.14, 0xf3ead8, 0, 0.08, 0, g, 8, 6); b.scale.y = 0.7; return g }, // dough ball
+    food3: () => { const g = G(); cyl(0.19, 0.19, 0.06, 0xc9862e, 0, 0.04, 0, g, 12); cyl(0.12, 0.12, 0.02, 0x7a3d12, 0, 0.08, 0, g, 10); return g }, // hotteok
+    H: { raw0: 0.13, food0: 0.12, raw1: 0.14, food1: 0.1, raw2: 0.11, food2: 0.14, raw3: 0.12, food3: 0.08 },
+  },
+  tokyo: {
+    raw0: () => { const g = bowl(G()); sph(0.05, 0xff8aa0, 0.04, 0.14, 0.02, g, 6, 4); sph(0.04, 0xff8aa0, -0.05, 0.14, -0.03, g, 6, 4); return g }, // batter + octopus bits
+    food0: () => { const g = G(); box(0.4, 0.04, 0.24, 0xe8d0a0, 0, 0.02, 0, g); for (let i = 0; i < 6; i++) { const x = -0.12 + (i % 3) * 0.12, z = i < 3 ? -0.05 : 0.06; sph(0.06, 0xc9802e, x, 0.08, z, g, 8, 6); box(0.07, 0.012, 0.02, 0xfff6e0, x, 0.14, z, g) } return g }, // takoyaki boat
+    raw1: () => { const g = G(); for (let k = 0; k < 3; k++) box(0.3, 0.035, 0.2, 0xf6dc6a, 0, 0.03 + k * 0.04, 0, g); return g }, // noodle blocks
+    food1: () => { const g = G(); cyl(0.2, 0.12, 0.14, 0xd8341e, 0, 0.07, 0, g, 12); cyl(0.18, 0.18, 0.02, 0xe8b070, 0, 0.14, 0, g, 12); sph(0.05, 0xfff6e0, 0.07, 0.16, 0.03, g, 8, 6); box(0.08, 0.01, 0.06, 0xd89a8a, -0.07, 0.155, 0.02, g); box(0.02, 0.06, 0.1, 0x1b3a1a, -0.02, 0.17, -0.09, g); return g }, // ramen bowl
+    raw2: () => { const g = G(); stick(g, 0.42); for (const x of [-0.1, 0, 0.1]) box(0.08, 0.07, 0.07, 0xf2a6a0, x, 0.06, 0, g); return g }, // raw chicken skewer
+    food2: () => { const g = G(); stick(g, 0.42); for (const x of [-0.1, 0, 0.1]) box(0.085, 0.075, 0.075, 0x8a4b1a, x, 0.06, 0, g); return g }, // yakitori
+    raw3: () => { const g = bowl(G()); sph(0.05, 0x6b2a2a, 0, 0.14, 0, g, 6, 4); return g }, // batter + bean paste
+    food3: () => { const g = G(); const b = sph(0.2, 0xd8902a, 0, 0.07, 0, g, 10, 6); b.scale.set(1, 0.42, 0.62); const tl = mesh(geo('cone', () => new THREE.ConeGeometry(0.1, 0.15, 3)), mat(0xc07a20), 0.24, 0.07, 0, g); tl.rotation.z = Math.PI / 2; sph(0.04, 0x3a1a0a, -0.13, 0.12, 0.05, g, 6, 4); for (const x of [-0.05, 0.03, 0.11]) box(0.02, 0.03, 0.14, 0xa86010, x, 0.13, 0, g); return g }, // taiyaki
+    H: { raw0: 0.13, food0: 0.14, raw1: 0.13, food1: 0.18, raw2: 0.09, food2: 0.09, raw3: 0.13, food3: 0.12 },
+  },
+  bangkok: {
+    raw0: () => { const g = G(); for (const z of [-0.05, 0.05]) { const r = cyl(0.06, 0.06, 0.34, 0xf8f4ec, 0, 0.06, z, g, 8); r.rotation.z = Math.PI / 2 } return g }, // rice noodle bundles
+    food0: () => { const g = G(); cyl(0.2, 0.18, 0.03, 0xffffff, 0, 0.015, 0, g, 14); const n = sph(0.15, 0xe89a3a, 0, 0.05, 0, g, 10, 6); n.scale.y = 0.45; for (const [x, z] of [[0.04, 0.05], [-0.05, -0.02], [0.06, -0.06]]) box(0.03, 0.02, 0.03, 0xc8823a, x, 0.11, z, g); sph(0.04, 0x6cd04a, 0.15, 0.05, 0.08, g, 6, 4); box(0.12, 0.012, 0.03, 0x4a9a3a, -0.1, 0.11, 0.05, g); return g }, // pad thai plate
+    raw1: () => { const g = G(); const m = sph(0.13, 0xffc21a, 0, 0.09, 0, g, 10, 8); m.scale.set(1.3, 0.75, 0.85); sph(0.03, 0x4a9a3a, -0.16, 0.12, 0, g, 5, 4); return g }, // a whole mango
+    food1: () => { const g = G(); cyl(0.2, 0.18, 0.03, 0x2fb36b, 0, 0.015, 0, g, 14); const r = sph(0.1, 0xfffaf0, -0.07, 0.07, 0, g, 10, 6); r.scale.y = 0.7; for (let k = 0; k < 3; k++) { const sl = box(0.06, 0.04, 0.16, 0xffc21a, 0.05 + k * 0.05, 0.05, 0, g); sl.rotation.y = 0.2 } box(0.08, 0.01, 0.05, 0xfff3c0, -0.07, 0.14, 0, g); return g }, // mango sticky rice
+    raw2: () => { const g = G(); stick(g, 0.42); for (const x of [-0.11, -0.03, 0.05, 0.12]) box(0.07, 0.04, 0.06, 0xf2a6a0, x, 0.06, 0, g); return g }, // raw satay
+    food2: () => { const g = G(); stick(g, 0.42); for (const x of [-0.11, -0.03, 0.05, 0.12]) box(0.075, 0.045, 0.065, 0xb8651a, x, 0.06, 0, g); cyl(0.06, 0.05, 0.05, 0xffffff, 0, 0.025, 0.12, g, 8); cyl(0.05, 0.05, 0.01, 0xc8822a, 0, 0.052, 0.12, g, 8); return g }, // satay + peanut sauce
+    raw3: () => { const g = G(); box(0.2, 0.16, 0.12, 0xd8a050, 0, 0.08, 0, g); box(0.21, 0.04, 0.13, 0xd8261e, 0, 0.12, 0, g); return g }, // tea leaves bag
+    food3: () => { const g = G(); cyl(0.09, 0.07, 0.26, 0xff8a1a, 0, 0.13, 0, g, 10); cyl(0.09, 0.09, 0.05, 0xfff3e0, 0, 0.24, 0, g, 10); const st = cyl(0.012, 0.012, 0.2, 0xff5d8f, 0.02, 0.33, 0, g, 4); st.rotation.z = 0.2; return g }, // Thai tea
+    H: { raw0: 0.12, food0: 0.1, raw1: 0.17, food1: 0.12, raw2: 0.08, food2: 0.08, raw3: 0.16, food3: 0.27 },
+  },
+  taipei: {
+    raw0: () => { const g = bowl(G(), 0xb9bec8, 0x2a1a14); for (const [x, z] of [[0.03, 0.02], [-0.04, -0.03], [0.05, -0.05], [-0.02, 0.06]]) sph(0.03, 0x1a0e0a, x, 0.14, z, g, 6, 4); return g }, // tapioca pearls
+    food0: () => { const g = G(); cyl(0.09, 0.07, 0.28, 0xd8b088, 0, 0.14, 0, g, 10); for (const [x, z] of [[0.03, 0.06], [-0.04, 0.05], [0.0, 0.07], [0.05, 0.03]]) sph(0.025, 0x1a0e0a, x, 0.05, z, g, 5, 4); cyl(0.095, 0.095, 0.02, 0xffffff, 0, 0.285, 0, g, 10); const st = cyl(0.022, 0.022, 0.2, 0xff5d8f, 0.02, 0.36, 0, g, 6); st.rotation.z = 0.15; return g }, // bubble tea
+    raw1: () => { const g = G(); const c = box(0.3, 0.04, 0.24, 0xf2b0a0, 0, 0.03, 0, g); c.rotation.y = 0.2; return g }, // raw chicken cutlet
+    food1: () => { const g = G(); box(0.2, 0.28, 0.06, 0xfff3e0, 0, 0.14, 0, g); box(0.21, 0.05, 0.065, 0xd8261e, 0, 0.18, 0, g); const c = box(0.3, 0.2, 0.05, 0xd8902a, 0, 0.3, 0.01, g); c.rotation.z = 0.08; return g }, // jipai in a paper bag
+    raw2: () => { const g = G(); for (const [x, z] of [[-0.06, -0.05], [0.06, -0.05], [0, 0.06]]) box(0.1, 0.08, 0.1, 0xfaf6e8, x, 0.04, z, g); return g }, // tofu
+    food2: () => { const g = G(); box(0.32, 0.03, 0.22, 0xfff3e0, 0, 0.015, 0, g); for (const [x, z] of [[-0.08, -0.04], [0.06, -0.04], [-0.01, 0.05]]) box(0.1, 0.08, 0.1, 0xb8701f, x, 0.07, z, g); for (const [x, z, c] of [[0.1, 0.06, 0x7ac84a], [-0.11, 0.06, 0xff5a3a], [0.12, -0.07, 0x7ac84a]]) box(0.06, 0.02, 0.04, c, x, 0.04, z, g); return g }, // stinky tofu + pickles
+    raw3: () => { const g = G(); const b = sph(0.14, 0xf3ead8, 0, 0.08, 0, g, 8, 6); b.scale.y = 0.7; for (const [x, z] of [[0.05, 0.03], [-0.04, -0.05]]) box(0.03, 0.02, 0.02, 0x4a9a3a, x, 0.15, z, g); return g }, // dough with green onion
+    food3: () => { const g = G(); cyl(0.2, 0.2, 0.05, 0xe0a848, 0, 0.03, 0, g, 14); for (const [x, z] of [[0.06, 0.04], [-0.08, -0.03], [0.02, -0.1], [-0.03, 0.09], [0.11, -0.05]]) box(0.04, 0.012, 0.03, 0x4a9a3a, x, 0.06, z, g); return g }, // scallion pancake
+    H: { raw0: 0.13, food0: 0.3, raw1: 0.05, food1: 0.3, raw2: 0.08, food2: 0.11, raw3: 0.12, food3: 0.06 },
+  },
 }
-const ITEM_H = { raw0: 0.13, food0: 0.12, raw1: 0.14, food1: 0.1, raw2: 0.11, food2: 0.14, raw3: 0.12, food3: 0.08 }
+let ITEM = ITEMS.seoul, ITEM_H = ITEM.H
+// Pictures of the four foods, drawn from the 3D models once per city (no hand-drawn icon can drift from the model)
+const picScene = new THREE.Scene(), picCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 20)
+picScene.add(new THREE.HemisphereLight(0xffffff, 0x8a6a5a, 2.6)); { const d = new THREE.DirectionalLight(0xffffff, 1.6); d.position.set(-1, 3, 2); picScene.add(d) }
+const picRT = new THREE.WebGLRenderTarget(256, 256); picRT.texture.colorSpace = THREE.SRGBColorSpace
+const FOOD_PIC = []
+function foodPic(key) {
+  const m = ITEM[key](); picScene.add(m)
+  const b = new THREE.Box3().setFromObject(m), c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3())
+  const r = Math.max(sz.x, sz.y * 1.4, sz.z) * 0.62
+  picCam.left = -r; picCam.right = r; picCam.top = r; picCam.bottom = -r; picCam.updateProjectionMatrix()
+  picCam.position.set(c.x, c.y + r * 1.6, c.z + r * 2.4); picCam.lookAt(c)
+  const keep = renderer.getClearAlpha(), col = renderer.getClearColor(new THREE.Color())
+  renderer.setRenderTarget(picRT); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(picScene, picCam)
+  const px = new Uint8Array(256 * 256 * 4); renderer.readRenderTargetPixels(picRT, 0, 0, 256, 256, px)
+  renderer.setRenderTarget(null); renderer.setClearColor(col, keep); picScene.remove(m)
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256
+  const g = cv.getContext('2d'), img = g.createImageData(256, 256)
+  for (let y = 0; y < 256; y++) img.data.set(px.subarray((255 - y) * 1024, (256 - y) * 1024), y * 1024)
+  g.putImageData(img, 0, 0)
+  // a thick dark outline so the food reads on any background (cartoon style)
+  const out = document.createElement('canvas'); out.width = out.height = 256; const o = out.getContext('2d')
+  for (let a = 0; a < 16; a++) o.drawImage(cv, Math.cos(a / 8 * Math.PI) * 6, Math.sin(a / 8 * Math.PI) * 6)
+  o.globalCompositeOperation = 'source-in'; o.fillStyle = '#2a1238'; o.fillRect(0, 0, 256, 256); o.globalCompositeOperation = 'source-over'; o.drawImage(cv, 0, 0)
+  return { cv: out, url: out.toDataURL('image/png') }
+}
 function setStack(group, items, max = 20) {
   const key = items.slice(0, max).join(',')
   if (group.userData.key === key) return
@@ -360,20 +545,21 @@ function padMesh(color) {
   const g = new THREE.Group()
   const r = mesh(padGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }), 0, 0.02, 0, g); r.rotation.x = -Math.PI / 2
   const f = mesh(padFill, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false }), 0, 0.015, 0, g); f.rotation.x = -Math.PI / 2
-  scene.add(g); return g
+  ROOT.add(g); return g
 }
 const pads = []
 const PAD_ICON = {}
 const padIcon = (key, draw) => (PAD_ICON[key] ||= canvasTex(128, 128, (g) => { g.translate(64, 64); draw(g) }).tex)
+const padKey = (kind) => (kind === 'cash' ? 'cash' + cityId : kind)
 const ICONS = {
   crate: (g) => { g.fillStyle = '#c98f4f'; g.fillRect(-34, -18, 68, 44); g.fillStyle = '#8a5a2b'; g.fillRect(-34, -18, 68, 8); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(0, -48); g.lineTo(-16, -26); g.lineTo(16, -26); g.fill() },
   grill: (g) => { g.fillStyle = '#ff7a1a'; g.beginPath(); g.moveTo(0, -42); g.bezierCurveTo(30, -10, 30, 30, 0, 34); g.bezierCurveTo(-30, 30, -30, -10, 0, -42); g.fill(); g.fillStyle = '#ffd23f'; g.beginPath(); g.moveTo(0, -8); g.bezierCurveTo(14, 8, 14, 28, 0, 30); g.bezierCurveTo(-14, 28, -14, 8, 0, -8); g.fill() },
   disp: (g) => { g.fillStyle = '#fff'; g.beginPath(); g.ellipse(0, 10, 40, 16, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#6cff8a'; g.beginPath(); g.moveTo(0, -46); g.lineTo(-18, -20); g.lineTo(18, -20); g.fill(); g.fillRect(-6, -22, 12, 22) },
-  cash: (g) => { g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(0, 0, 34, 0, Math.PI * 2); g.fill(); g.fillStyle = '#8a5a00'; g.font = '900 44px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('₩', 0, 3) },
+  cash: (g) => { g.fillStyle = '#ffd23f'; g.beginPath(); g.arc(0, 0, 34, 0, Math.PI * 2); g.fill(); g.fillStyle = '#8a5a00'; g.font = `900 ${city.cur.length > 1 ? 30 : 44}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(city.cur, 0, 3) },
 }
 const addPad = (kind, stall, x, z, color) => {
   const p = { kind, stall, x, z, g: padMesh(color) }; p.g.position.set(x, 0, z); pads.push(p)
-  if (ICONS[kind]) { const m = mesh(geo('icon', () => new THREE.PlaneGeometry(0.95, 0.95)), new THREE.MeshBasicMaterial({ map: padIcon(kind, ICONS[kind]), transparent: true, depthWrite: false }), 0, 0.03, 0, p.g); m.rotation.x = -Math.PI / 2 }
+  if (ICONS[kind]) { const m = mesh(geo('icon', () => new THREE.PlaneGeometry(0.95, 0.95)), new THREE.MeshBasicMaterial({ map: padIcon(padKey(kind), ICONS[kind]), transparent: true, depthWrite: false }), 0, 0.03, 0, p.g); m.rotation.x = -Math.PI / 2 }
   return p
 }
 
@@ -408,61 +594,114 @@ function signTex(native, local, accent) {
 const shopSign = (native, local, accent, w) => mesh(new THREE.PlaneGeometry(w, w / 2), new THREE.MeshBasicMaterial({ map: signTex(native, local, accent), transparent: true, depthWrite: false }))
 // language changed in settings: new plates under the signs, new talk lines, new money-spot label
 function relabel() {
-  for (const st of stalls) { const m = st.sign.material; m.map.dispose(); m.map = signTex(city[st.name], t(st.name), st.neon); m.needsUpdate = true }
+  for (const st of stalls) { const m = st.sign.material; m.map.dispose(); m.map = signTex(st.native, t(st.name), st.neon); m.needsUpdate = true }
   for (const tex of talkTex.values()) tex.dispose()
   talkTex.clear(); drawBuy(); hudStreet(); applyText()
 }
 const steamTex = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,.75)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64) }).tex
 const ROWS = [{ grill: -11.2, disp: -5.2 }, { grill: 1.4, disp: 7.0 }]
-const stalls = [
-  { id: 0, name: 'fish', x: -2.7, row: 0, price: 5, cook: 0.9, tent: 0xff7a2a, neon: '#ffb35c' },
-  { id: 1, name: 'oden', x: 2.7, row: 0, price: 7, cook: 1.0, tent: 0xff5a3a, neon: '#7fe3ff' },
-  { id: 2, name: 'tteok', x: -2.7, row: 1, price: 9, cook: 1.3, tent: 0xff8a2a, neon: '#ff5d8f' },
-  { id: 3, name: 'hotteok', x: 2.7, row: 1, price: 8, cook: 1.1, tent: 0xff6a2a, neon: '#ffd23f' },
+// base numbers of the four stalls (Seoul won); a city multiplies prices by city.mul (BALANCE.md)
+const STALL_BASE = [
+  { id: 0, x: -2.7, row: 0, price: 5, cook: 0.9, neon: '#ffb35c' },
+  { id: 1, x: 2.7, row: 0, price: 7, cook: 1.0, neon: '#7fe3ff' },
+  { id: 2, x: -2.7, row: 1, price: 9, cook: 1.3, neon: '#ff5d8f' },
+  { id: 3, x: 2.7, row: 1, price: 8, cook: 1.1, neon: '#ffd23f' },
 ]
-for (const s of stalls) {
-  const side = s.x < 0 ? -1 : 1, R = ROWS[s.row]
-  s.root = new THREE.Group(); scene.add(s.root); s.boxes = []
-  s.crate = { x: s.x + side * 2.25, z: R.grill }; s.grill = { x: s.x - side * 0.2, z: R.grill }; s.disp = { x: s.x, z: R.disp }
-  // the tent: a translucent orange roof over the grill, poles at the corners
-  const tentMat = new THREE.MeshLambertMaterial({ color: s.tent, emissive: 0x5a1800, transparent: true, opacity: 0.62 })
-  const roofZ = R.grill - 0.2
-  const awn = box(4.6, 0.08, 1.3, tentMat, s.x + side * 1.0, 2.45, roofZ, s.root); awn.rotation.x = 0.2
-  for (const dx of [-2.2, 2.2]) cyl(0.05, 0.05, 2.4, 0x8a8f99, s.x + side * 1.0 + dx, 1.2, R.grill - 0.75, s.root, 6)
-  s.sign = shopSign(city[s.name], t(s.name), s.neon, 2.6); s.sign.position.set(s.grill.x, 3.35, R.grill - 0.9); s.root.add(s.sign)
-  box(1.0, 0.7, 1.0, 0x9a6a3d, s.crate.x, 0.35, s.crate.z, s.root); s.boxes.push(block(s.crate.x, s.crate.z, 1.0, 1.0))
-  s.crateStack = new THREE.Group(); s.crateStack.position.set(s.crate.x, 0.72, s.crate.z); s.root.add(s.crateStack); setStack(s.crateStack, Array(4).fill(`raw${s.id}`))
-  box(2.0, 0.85, 1.2, 0x5c5f73, s.grill.x, 0.43, s.grill.z, s.root); s.boxes.push(block(s.grill.x, s.grill.z, 2.0, 1.2))
-  if (s.id === 1) { cyl(0.72, 0.68, 0.4, 0x8b8f9c, s.grill.x, 1.05, s.grill.z, s.root, 14); cyl(0.66, 0.66, 0.02, 0xc98f3c, s.grill.x, 1.24, s.grill.z, s.root, 14) }
-  else if (s.id === 2) { cyl(0.8, 0.8, 0.12, 0x2a2a30, s.grill.x, 0.92, s.grill.z, s.root, 14); cyl(0.74, 0.74, 0.02, 0xd8341e, s.grill.x, 0.99, s.grill.z, s.root, 14) }
-  else box(1.8, 0.08, 1.0, 0x1a1a1f, s.grill.x, 0.9, s.grill.z, s.root)
-  s.grillShow = new THREE.Group(); s.grillShow.position.set(s.grill.x, s.id === 1 ? 1.25 : 0.96, s.grill.z); s.root.add(s.grillShow)
-  glow(s.x, R.grill + 1.6, 3.4); glow(s.x, R.disp + 1.2, 2.6)
-  s.light = new THREE.PointLight(0xffb35c, 30, 11, 1.4); s.light.position.set(s.x + side * 1.0, 2.2, R.grill + 1); s.root.add(s.light)
-  box(2.0, 0.8, 0.9, 0x8a5a33, s.disp.x, 0.4, s.disp.z, s.root); box(2.1, 0.06, 1.0, 0xf5e6c8, s.disp.x, 0.83, s.disp.z, s.root); s.boxes.push(block(s.disp.x, s.disp.z, 2.0, 0.9))
-  s.dispShow = new THREE.Group(); s.dispShow.position.set(s.disp.x, 0.86, s.disp.z); s.root.add(s.dispShow)
-  s.pads = {
-    crate: addPad('crate', s.id, s.crate.x, s.crate.z + 1.35, 0xffffff),
-    grill: addPad('grill', s.id, s.grill.x, s.grill.z + 1.4, 0xffa23a),
-    disp: addPad('disp', s.id, s.disp.x - side * 1.8, s.disp.z, 0x6cff8a),
-  }
-  s.steam = []
-  for (let i = 0; i < 8; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: steamTex, transparent: true, depthWrite: false, opacity: 0 })); sp.position.set(s.grill.x, 1, s.grill.z); sp.userData.t = i / 8; s.root.add(sp); s.steam.push(sp) }
+// the city's twist: numbers only, seen on the screen, never a new button (BALANCE.md 'cities')
+const TWIST = {
+  seoul: {},
+  tokyo: { train: 38 }, // a train passes every 38 s and drops 3 commuters at once
+  bangkok: { cookMul: 0.7, patience: 26 }, // wok fire: food is ready faster, people wait less
+  taipei: { line: 5, patience: 40, gapMul: 0.85 }, // night-market crowd: longer lines, more people, more patient
 }
-// the till near the entrance; customers pay in a line below it
+let stalls = [], cashPad = null, arch = null
+function buildStalls() {
+  const L = LOOK[cityId], tw = TWIST[cityId]
+  stalls = STALL_BASE.map((b) => ({ ...b, name: city.foods[b.id], native: city.native[b.id], price: b.price * city.mul, cook: b.cook * (tw.cookMul || 1), tent: L.tents[b.id] }))
+  for (const s of stalls) {
+    const side = s.x < 0 ? -1 : 1, R = ROWS[s.row]
+    s.root = new THREE.Group(); ROOT.add(s.root); s.boxes = []
+    s.crate = { x: s.x + side * 2.25, z: R.grill }; s.grill = { x: s.x - side * 0.2, z: R.grill }; s.disp = { x: s.x, z: R.disp }
+    // the roof: Seoul an orange see-through tent, Tokyo a wooden yatai with a noren curtain, Bangkok and Taipei striped awnings
+    const roofZ = R.grill - 0.2, rx = s.x + side * 1.0
+    const tentMat = new THREE.MeshLambertMaterial({ color: s.tent, emissive: 0x5a1800, transparent: L.tentA < 1, opacity: L.tentA })
+    const awn = box(4.6, 0.08, 1.3, tentMat, rx, 2.45, roofZ, s.root); awn.rotation.x = 0.2
+    if (cityId === 'tokyo') {
+      box(4.8, 0.14, 1.5, 0x5a3a20, rx, 2.56, roofZ, s.root).rotation.x = 0.2
+      for (let k = 0; k < 5; k++) box(0.82, 0.55, 0.02, k % 2 ? 0x1d3f8a : 0x23489a, rx - 1.8 + k * 0.9, 2.12, R.grill + 0.45, s.root) // noren
+    } else if (cityId !== 'seoul') {
+      for (let k = 0; k < 6; k++) { const st = box(0.38, 0.09, 1.32, 0xffffff, rx - 1.9 + k * 0.76, 2.46, roofZ, s.root); st.rotation.x = 0.2 }
+      for (let k = 0; k < 12; k++) box(0.38, 0.22, 0.02, k % 2 ? 0xffffff : s.tent, rx - 2.1 + k * 0.38, 2.22, R.grill + 0.45, s.root) // scalloped edge
+    }
+    for (const dx of [-2.2, 2.2]) cyl(0.05, 0.05, 2.4, cityId === 'tokyo' ? 0x6a4a2a : 0x8a8f99, rx + dx, 1.2, R.grill - 0.75, s.root, 6)
+    s.sign = shopSign(s.native, t(s.name), s.neon, 2.6); s.sign.position.set(s.grill.x, 3.35, R.grill - 0.9); s.root.add(s.sign)
+    // a big model of the food on the roof: from far away, with no words, everyone sees what this stall sells (11-15 user)
+    s.big = ITEM[`food${s.id}`](); s.big.scale.setScalar(3.6); s.big.position.set(s.grill.x, 4.15, R.grill - 1.4); s.root.add(s.big)
+    const bb = new THREE.Box3().setFromObject(s.big); s.big.position.y += 4.15 - bb.min.y
+    box(1.0, 0.7, 1.0, 0x9a6a3d, s.crate.x, 0.35, s.crate.z, s.root); s.boxes.push(block(s.crate.x, s.crate.z, 1.0, 1.0))
+    s.crateStack = new THREE.Group(); s.crateStack.position.set(s.crate.x, 0.72, s.crate.z); s.root.add(s.crateStack); setStack(s.crateStack, Array(4).fill(`raw${s.id}`))
+    box(2.0, 0.85, 1.2, cityId === 'tokyo' ? 0x7a5230 : 0x5c5f73, s.grill.x, 0.43, s.grill.z, s.root); s.boxes.push(block(s.grill.x, s.grill.z, 2.0, 1.2))
+    const pot = POT[cityId][s.id]
+    if (pot === 'pot') { cyl(0.72, 0.68, 0.4, 0x8b8f9c, s.grill.x, 1.05, s.grill.z, s.root, 14); cyl(0.66, 0.66, 0.02, cityId === 'tokyo' ? 0xe8b070 : 0xc98f3c, s.grill.x, 1.24, s.grill.z, s.root, 14) }
+    else if (pot === 'pan') { cyl(0.8, 0.8, 0.12, 0x2a2a30, s.grill.x, 0.92, s.grill.z, s.root, 14); cyl(0.74, 0.74, 0.02, cityId === 'seoul' ? 0xd8341e : 0x3a3a40, s.grill.x, 0.99, s.grill.z, s.root, 14) }
+    else box(1.8, 0.08, 1.0, 0x1a1a1f, s.grill.x, 0.9, s.grill.z, s.root)
+    s.grillShow = new THREE.Group(); s.grillShow.position.set(s.grill.x, pot === 'pot' ? 1.25 : 0.96, s.grill.z); s.root.add(s.grillShow)
+    // Bangkok's twist on the screen: wok fire under the pans (faster cooking)
+    s.fire = []
+    if (tw.cookMul) for (let k = 0; k < 5; k++) { const f = mesh(geo('flame', () => new THREE.ConeGeometry(0.14, 0.5, 6)), basic(k % 2 ? 0xff8a1a : 0xffd23f), s.grill.x - 0.6 + k * 0.3, 0.98, s.grill.z + 0.62, s.root); s.fire.push(f) }
+    glow(s.x, R.grill + 1.6, 3.4); glow(s.x, R.disp + 1.2, 2.6)
+    s.light = new THREE.PointLight(0xffb35c, 30, 11, 1.4); s.light.position.set(s.x + side * 1.0, 2.2, R.grill + 1); s.root.add(s.light)
+    box(2.0, 0.8, 0.9, 0x8a5a33, s.disp.x, 0.4, s.disp.z, s.root); box(2.1, 0.06, 1.0, 0xf5e6c8, s.disp.x, 0.83, s.disp.z, s.root); s.boxes.push(block(s.disp.x, s.disp.z, 2.0, 0.9))
+    s.dispShow = new THREE.Group(); s.dispShow.position.set(s.disp.x, 0.86, s.disp.z); s.root.add(s.dispShow)
+    s.pads = {
+      crate: addPad('crate', s.id, s.crate.x, s.crate.z + 1.35, 0xffffff),
+      grill: addPad('grill', s.id, s.grill.x, s.grill.z + 1.4, 0xffa23a),
+      disp: addPad('disp', s.id, s.disp.x - side * 1.8, s.disp.z, 0x6cff8a),
+    }
+    s.steam = []
+    for (let i = 0; i < 8; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: steamTex, transparent: true, depthWrite: false, opacity: 0 })); sp.position.set(s.grill.x, 1, s.grill.z); sp.userData.t = i / 8; s.root.add(sp); s.steam.push(sp) }
+  }
+  // the till near the entrance; customers pay in a line below it
+  box(2.0, 0.95, 0.9, 0xb0413e, CASH.x, 0.48, CASH.z); box(2.1, 0.06, 1.0, 0xf5e6c8, CASH.x, 0.98, CASH.z); block(CASH.x, CASH.z, 2.0, 0.9)
+  box(0.5, 0.35, 0.4, 0x2e2a40, CASH.x + 0.6, 1.18, CASH.z); box(0.4, 0.05, 0.3, 0x7fe3ff, CASH.x + 0.6, 1.37, CASH.z)
+  sph(0.3, basic(0xff4d4d), CASH.x - 0.8, 1.9, CASH.z)
+  cyl(0.03, 0.03, 0.9, 0x6b4a2f, CASH.x - 0.8, 1.3, CASH.z, ROOT, 4)
+  const cashLight = new THREE.PointLight(0xff7a7a, 12, 8, 1.6); cashLight.position.set(CASH.x - 0.8, 2.2, CASH.z + 0.4); ROOT.add(cashLight)
+  cashPad = addPad('cash', -1, CASH.x, CASH.z - 1.45, 0xffd23f)
+  // the market gate: the last lamp, a neon arch over the street
+  arch = new THREE.Group(); arch.visible = false; ROOT.add(arch)
+  for (const x of [-5.6, 5.6]) cyl(0.18, 0.18, 5.2, 0xc0392b, x, 2.6, -7.6, arch, 8)
+  box(11.6, 0.9, 0.4, 0x8a1f1f, 0, 5.3, -7.6, arch)
+  const archSign = neon(city.gate, '#ffd23f', 7); archSign.position.set(0, 5.35, -7.36); arch.add(archSign)
+}
+// what each grill looks like: a pot of broth, a round pan, or a flat griddle
+const POT = { seoul: ['flat', 'pot', 'pan', 'flat'], tokyo: ['flat', 'pot', 'flat', 'flat'], bangkok: ['pan', 'flat', 'flat', 'pot'], taipei: ['pot', 'pan', 'pan', 'flat'] }
 const CASH = { x: 0, z: 13.5 }
-box(2.0, 0.95, 0.9, 0xb0413e, CASH.x, 0.48, CASH.z); box(2.1, 0.06, 1.0, 0xf5e6c8, CASH.x, 0.98, CASH.z); block(CASH.x, CASH.z, 2.0, 0.9)
-box(0.5, 0.35, 0.4, 0x2e2a40, CASH.x + 0.6, 1.18, CASH.z); box(0.4, 0.05, 0.3, 0x7fe3ff, CASH.x + 0.6, 1.37, CASH.z)
-sph(0.3, basic(0xff4d4d), CASH.x - 0.8, 1.9, CASH.z)
-cyl(0.03, 0.03, 0.9, 0x6b4a2f, CASH.x - 0.8, 1.3, CASH.z, scene, 4)
-const cashLight = new THREE.PointLight(0xff7a7a, 12, 8, 1.6); cashLight.position.set(CASH.x - 0.8, 2.2, CASH.z + 0.4); scene.add(cashLight)
-const cashPad = addPad('cash', -1, CASH.x, CASH.z - 1.45, 0xffd23f)
-// the market gate: the last lamp, a neon arch over the street
-const arch = new THREE.Group(); arch.visible = false; scene.add(arch)
-for (const x of [-5.6, 5.6]) cyl(0.18, 0.18, 5.2, 0xc0392b, x, 2.6, -7.6, arch, 8)
-box(11.6, 0.9, 0.4, 0x8a1f1f, 0, 5.3, -7.6, arch)
-const archSign = neon(city.gate, '#ffd23f', 7); archSign.position.set(0, 5.35, -7.36); arch.add(archSign)
 
+// ---------------------------------------------------------------- one city: build, throw away, fly on
+const BASE_STEPS = STEPS.map((s) => ({ ...s }))
+function buildCity(id) {
+  cityId = CITY[id] ? id : 'seoul'; city = CITY[cityId]
+  // throw the old city away (shared shapes and colours stay cached)
+  const keepGeo = new Set(GEO.values()), keepMat = new Set([...mats.values(), glowMat, winOff, ...winOn, wireMat])
+  const shared = new Set([glowTex, steamTex, ...flyerTex, ...Object.values(PAD_ICON)])
+  world.traverse((o) => {
+    if (o.geometry && !keepGeo.has(o.geometry)) o.geometry.dispose()
+    if (o.material && !keepMat.has(o.material)) { if (o.material.map && !shared.has(o.material.map)) o.material.map.dispose(); o.material.dispose() }
+  })
+  while (world.children.length) world.remove(world.children[0])
+  boxes.length = 0; pads.length = 0; pads.push(buy); train = null
+  ITEM = ITEMS[cityId]; ITEM_H = ITEM.H
+  const tw = TWIST[cityId]; PATIENCE = tw.patience || 32; MAX_LINE = tw.line || 4
+  STEPS = BASE_STEPS.map((s) => ({ ...s, cost: s.cost * city.mul }))
+  ROOT = world
+  buildStreet(); buildStalls()
+  ROOT = scene
+  for (const b of sideBlocks) block(...b)
+  // the food pictures and the 'I want this' bubbles of this city
+  for (let i = 0; i < 4; i++) { FOOD_PIC[i] = foodPic(`food${i}`); BUB['want' + i]?.dispose?.(); BUB['want' + i] = bubbleTex(FOOD_PIC[i].cv) }
+  resetStalls(); setStep(0)
+}
 // money spots: one at a time, in STEPS order
 const buyC = canvasTex(256, 256, () => {})
 const buyMesh = mesh(new THREE.PlaneGeometry(1.7, 1.7), new THREE.MeshBasicMaterial({ map: buyC.tex, transparent: true, depthWrite: false }), 0, 0.03, 0); buyMesh.rotation.x = -Math.PI / 2
@@ -478,7 +717,7 @@ function drawBuy() {
   g.lineWidth = 10; g.strokeStyle = '#ffd23f'; g.setLineDash([26, 14]); g.beginPath(); g.roundRect(8, 8, 240, 240, 34); g.stroke(); g.setLineDash([])
   g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'
   g.font = `800 34px ${FONT}`; g.fillText(stepName(st), 128, 80, 220)
-  g.font = `900 62px ${FONT}`; g.fillStyle = '#ffd23f'; g.fillText('₩' + buy.left, 128, 168, 224)
+  g.font = `900 62px ${FONT}`; g.fillStyle = '#ffd23f'; g.fillText(city.cur + buy.left, 128, 168, 224)
   buyC.tex.needsUpdate = true
 }
 function setStep(i) {
@@ -522,30 +761,21 @@ function stepWalker(w, dt) {
   return !w.path?.length
 }
 // icon bubbles (what they want) and talk bubbles (short lines from the strings table)
-function breadIcon(g) {
-  g.save(); g.translate(60, 60)
-  g.fillStyle = '#a35f17'; g.beginPath(); g.moveTo(26, 0); g.lineTo(46, -16); g.lineTo(44, 16); g.closePath(); g.fill()
-  g.fillStyle = '#c47a22'; g.beginPath(); g.ellipse(-4, 0, 34, 22, 0, 0, Math.PI * 2); g.fill()
-  g.strokeStyle = '#7a3e0c'; g.lineWidth = 3; for (const x of [-14, -2, 10]) { g.beginPath(); g.arc(x, 0, 12, -1, 1); g.stroke() }
-  g.fillStyle = '#5a1f1f'; g.beginPath(); g.arc(-24, -6, 4, 0, Math.PI * 2); g.fill()
-  g.restore()
-}
-function tteokIcon(g) { g.save(); g.translate(64, 62); g.fillStyle = '#eee'; g.beginPath(); g.ellipse(0, 6, 36, 26, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#d8341e'; g.beginPath(); g.ellipse(0, 0, 30, 16, 0, 0, Math.PI * 2); g.fill(); g.fillStyle = '#ff8a5d'; for (const [x, y, r] of [[-12, -2, 0.3], [6, 3, -0.4], [12, -6, 0.2]]) { g.save(); g.translate(x, y); g.rotate(r); g.fillRect(-12, -4, 24, 8); g.restore() } g.restore() }
-function hotteokIcon(g) { g.save(); g.translate(64, 62); g.fillStyle = '#b8762a'; g.beginPath(); g.arc(0, 0, 32, 0, Math.PI * 2); g.fill(); g.fillStyle = '#e3a548'; g.beginPath(); g.arc(-6, -6, 18, 0, Math.PI * 2); g.fill(); g.fillStyle = '#6a2f0c'; g.beginPath(); g.arc(8, 8, 7, 0, Math.PI * 2); g.fill(); g.restore() }
 function bubbleTex(icon) {
   return canvasTex(128, 128, (g) => {
     g.fillStyle = '#fff'; g.beginPath(); g.arc(64, 58, 50, 0, Math.PI * 2); g.fill(); g.beginPath(); g.moveTo(52, 100); g.lineTo(64, 124); g.lineTo(76, 100); g.fill()
-    if (typeof icon === 'function') { g.save(); g.translate(0, -4); icon(g); g.restore() } else { g.font = '58px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, 64, 62) }
+    if (icon instanceof HTMLCanvasElement) g.drawImage(icon, 12, 4, 104, 104)
+    else { g.font = '58px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, 64, 62) }
   }).tex
 }
-const BUB = { want0: bubbleTex(breadIcon), want1: bubbleTex('🍢'), want2: bubbleTex(tteokIcon), want3: bubbleTex(hotteokIcon), angry: bubbleTex('💢'), happy: bubbleTex('❤️'), pay: bubbleTex('💰'), sleep: bubbleTex('💤') }
+const BUB = { angry: bubbleTex('💢'), happy: bubbleTex('❤️'), pay: bubbleTex('💰'), sleep: bubbleTex('💤') }
 function setBubble(w, key) {
   if (!w.bubble) { w.bubble = new THREE.Sprite(new THREE.SpriteMaterial({ map: BUB[key || 'happy'], depthTest: false })); w.bubble.scale.set(0.75, 0.75, 1); w.bubble.renderOrder = 5; scene.add(w.bubble) }
   w.bubble.visible = !!key; if (key) w.bubble.material.map = BUB[key]
 }
 const talkTex = new Map()
 function talk(w, kind) {
-  const line = pick(talkLines(kind))
+  const line = pick(kind === 'call' ? tc('call') : talkLines(kind))
   if (!talkTex.has(line)) {
     talkTex.set(line, canvasTex(320, 96, (g) => {
       g.font = `800 34px ${FONT}`; const tw = Math.min(310, g.measureText(line).width + 34)
@@ -753,7 +983,7 @@ function sear(at) {
 }
 function unlock(st) {
   sfx('unlock'); buzz(40); game.lit++; game.unlocks.push(Math.round(game.time))
-  if (st.what === 'stall') { const s = stalls[st.id]; s.open = true; setOpenLook(s); buildGrid(); bannerShow(`${t(s.name)}!`, 1.6); burst(s.disp.x, s.disp.z) }
+  if (st.what === 'stall') { const s = stalls[st.id]; s.open = true; setOpenLook(s); buildGrid(); burst(s.disp.x, s.disp.z); game.tasted.push(s.id); tasteCard(s.id) }
   else if (st.what === 'staff') { hire(st.role, st.x, st.z); bannerShow(`${t(roleKey[st.role])}!`, 1.6); burst(st.x, st.z) }
   else { arch.visible = true; burst(0, -7.6, 60, 4); hudStreet(); clearCity(); return }
   setStep(game.step + 1)
@@ -788,13 +1018,15 @@ function updateStalls(dt) {
       s.grillShow.userData.n = key
       while (s.grillShow.children.length) s.grillShow.remove(s.grillShow.children[0])
       const all = [...Array(s.raw).fill(`raw${s.id}`), ...Array(s.food).fill(`food${s.id}`)]
-      all.slice(0, 10).forEach((k, i) => { const m = ITEM[k](); m.position.set(-0.72 + (i % 5) * 0.36, 0, -0.25 + Math.floor(i / 5) * 0.45); if (k === 'food1') { m.rotation.z = Math.PI / 2; m.position.y = 0.1 } s.grillShow.add(m) })
+      all.slice(0, 10).forEach((k, i) => { const m = ITEM[k](); m.position.set(-0.72 + (i % 5) * 0.36, 0, -0.25 + Math.floor(i / 5) * 0.45); if (k === 'food1' && cityId === 'seoul') { m.rotation.z = Math.PI / 2; m.position.y = 0.1 } s.grillShow.add(m) })
     }
     if (s.dispShow.children.length !== s.shown) {
       while (s.dispShow.children.length > s.shown) s.dispShow.remove(s.dispShow.children[s.dispShow.children.length - 1])
       while (s.dispShow.children.length < s.shown) { const i = s.dispShow.children.length, m = ITEM[`food${s.id}`](); m.position.set(-0.72 + (i % 5) * 0.36, 0, -0.2 + Math.floor(i / 5) * 0.4); s.dispShow.add(m) }
     }
     const cooking = s.raw > 0
+    s.big.rotation.y += dt * 0.5
+    s.fire.forEach((f, i) => { f.visible = cooking; f.scale.y = 0.7 + Math.abs(Math.sin(game.time * 13 + i * 1.7)) * 0.7 })
     for (const sp of s.steam) {
       sp.userData.t += dt * 0.6; if (sp.userData.t > 1) { sp.userData.t -= 1; sp.position.set(s.grill.x + rnd(-0.7, 0.7), 1.1, s.grill.z + rnd(-0.3, 0.3)) }
       const u = sp.userData.t; sp.position.y = 1.1 + u * 1.8; sp.scale.setScalar(0.5 + u * 0.9)
@@ -821,9 +1053,10 @@ function updateSparks(dt) {
 
 // ---------------------------------------------------------------- save (Playgama storage and this device; the newer one wins)
 // bump when a sound file changes, so phones never keep an old cached sound (11-14: the old hiss stayed)
-const AUDIO_V = 4
+const AUDIO_V = 5
 const SAVE_KEY = 'baekho_pocha'
-const save = { at: 0, runs: 0, clears: 0, bestTime: 0, bestServed: 0, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
+const save = { at: 0, runs: 0, clears: 0, unlocked: 0, city: 'seoul', best: {}, music: 0.6, sfx: 0.9, shake: 1, lang: '' }
+const bestOf = (id) => (save.best[id] ||= { t: 0, s: 0 })
 let saveReady = false, saveTimer = 0
 function writeSave() {
   if (!saveReady) return // never write defaults over a save that has not been read yet
@@ -845,7 +1078,11 @@ async function readSave() {
   }
   const best = [local, remote].filter(Boolean).sort((a, b) => (+b.at || 0) - (+a.at || 0))[0]
   if (best) {
-    for (const k of ['at', 'runs', 'clears', 'bestTime', 'bestServed', 'music', 'sfx', 'shake']) if (best[k] != null && Number.isFinite(+best[k])) save[k] = +best[k]
+    for (const k of ['at', 'runs', 'clears', 'unlocked', 'music', 'sfx', 'shake']) if (best[k] != null && Number.isFinite(+best[k])) save[k] = +best[k]
+    save.unlocked = clamp(Math.floor(save.unlocked), 0, CITY_ORDER.length - 1)
+    if (best.best && typeof best.best === 'object') for (const id of CITY_ORDER) { const b = best.best[id]; if (b) save.best[id] = { t: Math.max(0, +b.t || 0), s: Math.max(0, +b.s || 0) } }
+    if (+best.bestTime > 0 && !save.best.seoul) save.best.seoul = { t: +best.bestTime, s: +best.bestServed || 0 } // the Seoul-only save of 11-14
+    if (CITY_ORDER.indexOf(best.city) >= 0 && CITY_ORDER.indexOf(best.city) <= save.unlocked) save.city = best.city
     save.music = clamp(save.music, 0, 1); save.sfx = clamp(save.sfx, 0, 1); save.lang = pickLang(best.lang)
   }
   saveReady = true
@@ -918,7 +1155,7 @@ const audio = {
     this.sfxGain = this.ctx.createGain(); this.sfxGain.connect(this.master)
     applyVolume()
     for (const n of ['pop', 'drop', 'coin', 'angry', 'unlock', 'rush', 'end', 'click']) this.load(n)
-    this.load('market').then(() => this.startMusic())
+    this.switchMusic()
     // no noise loops at all (11-14 user: a steady rustle under the effects, twice)
   },
   async load(name) {
@@ -941,9 +1178,13 @@ const audio = {
     const now = this.ctx.currentTime
     this.loops.crowd?.gain.setTargetAtTime(crowd, now, 0.4)
   },
-  startMusic() {
-    if (this.music || !this.buffers.market) return
-    const src = this.ctx.createBufferSource(); src.buffer = this.buffers.market; src.loop = true; src.connect(this.musicGain); src.start(); this.music = src
+  async switchMusic() {
+    if (!this.ctx) return
+    const name = cityId === 'seoul' ? 'market' : cityId, want = cityId
+    if (!this.buffers[name]) await this.load(name)
+    if (cityId !== want || !this.buffers[name] || this.musicName === name) return
+    try { this.music?.stop() } catch {}
+    const src = this.ctx.createBufferSource(); src.buffer = this.buffers[name]; src.loop = true; src.connect(this.musicGain); src.start(); this.music = src; this.musicName = name
   },
 }
 const sfx = (kind, vol = 0.6) => audio.play(kind, vol * 1.4)
@@ -965,18 +1206,21 @@ function hudStreet() {
   $('lamps').querySelectorAll('i').forEach((e, i) => e.classList.toggle('on', i < game.lit))
   $('streetTxt').textContent = `${game.lit}/8`
   const st = STEPS[game.step]
-  $('goal').innerHTML = st && game.phase !== 'clear' ? `${t('next')}: ${stepName(st)}<b>₩${st.cost}</b>` : ''
+  const pic = st?.what === 'stall' ? `<img src="${FOOD_PIC[st.id].url}" alt="">` : ''
+  $('goal').innerHTML = st && game.phase !== 'clear' ? `<span>${t('next')}:</span>${pic}<i>${stepName(st)}</i><b>${city.cur}${st.cost}</b>` : ''
   $('goal').classList.toggle('hide', !st || game.phase === 'clear')
+  $('goal').classList.toggle('long', !!st && [...t('next') + stepName(st) + st.cost].length > 17)
 }
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-function startGame() {
+function startGame(fund = 0) {
+  if (typeof fund !== 'number') fund = 0
   unlockAudio()
   for (const c of customers) removeWalker(c)
   for (const h of helpers) removeWalker(h)
   customers.length = 0; helpers.length = 0; queues.forEach((q) => { q.length = 0 }); cashQ.length = 0
   flyers.forEach((f) => scene.remove(f.m)); flyers.length = 0
   $('offerBtn').classList.add('hide')
-  Object.assign(game, { phase: 'play', paused: false, offered: false, offerT: 0, time: 0, money: 0, earned: 0, served: 0, lost: 0, rush: false, spawnT: 1.2, rushShown: false, lit: 1, clearT: 0, unlocks: [] })
+  Object.assign(game, { phase: 'play', paused: false, offered: false, offerT: 0, time: 0, money: fund, earned: 0, tasted: [0], trainT: 12, served: 0, lost: 0, rush: false, spawnT: 1.2, rushShown: false, lit: 1, clearT: 0, unlocks: [] })
   resetStalls(); arch.visible = false
   Object.assign(player, { x: 0, z: -1.5, items: [], face: Math.PI, path: [] })
   setStep(0)
@@ -984,12 +1228,13 @@ function startGame() {
   $('hud').classList.remove('hide'); $('map').classList.remove('hide')
   $('hint').textContent = t('hint'); setTimeout(() => $('hint').classList.add('on'), 1600); setTimeout(() => $('hint').classList.remove('on'), 6000)
   // arrival: a passport stamp for the city, 2 s
-  $('stampCity').textContent = city.stamp; $('stampSub').textContent = t('sub'); $('stampDate').textContent = new Date().toISOString().slice(0, 10).replaceAll('-', '.')
+  $('stampCity').textContent = city.stamp; $('stampCity').classList.toggle('long', city.stamp.length > 6); $('stampSub').textContent = tc('sub'); $('stampDate').textContent = new Date().toLocaleDateString('sv').replaceAll('-', '.')
   $('stamp').classList.remove('hide', 'on'); void $('stamp').offsetWidth; $('stamp').classList.add('on'); clearTimeout(game.stampT); game.stampT = setTimeout(() => $('stamp').classList.add('hide'), 2300)
   player.callT = 2.6
   guardBack(true)
-  save.runs++; writeSave()
-  platform.message('gameplay_started'); platform.track('shift_start', { run: save.runs })
+  clearTimeout(game.tasteT); game.tasteT = setTimeout(() => game.phase === 'play' && tasteCard(0), 2500)
+  save.runs++; save.city = cityId; writeSave()
+  platform.message('gameplay_started'); platform.track('shift_start', { run: save.runs, city: cityId })
 }
 // Rewarded offer (BALANCE.md 'ads'): just before the rush, a helper the player has not hired yet works 3 minutes free.
 // Shown only when the platform can show ads and a role is missing; a failed ad hides the button and gives nothing.
@@ -1010,25 +1255,66 @@ function takeOffer() {
     burst(st.x, st.z, 24); sfx('unlock'); platform.track('reward_helper', { role })
   })
 }
-// all 8 lamps: fireworks over Namsan, then the card that opens the next city
+// A tasting card when a stall opens (11-15 user: players abroad do not know these foods): the food picture, its name,
+// what it is in one line; 1.6 s, a tap closes it, play never stops.
+function tasteCard(id) {
+  const s = stalls[id]
+  $('tasteImg').src = FOOD_PIC[id].url; $('tasteName').textContent = t(s.name); $('tasteDesc').textContent = t(s.name + 'Desc')
+  const el = $('taste'); el.classList.remove('hide', 'on'); void el.offsetWidth; el.classList.add('on')
+  clearTimeout(game.tasteHide); game.tasteHide = setTimeout(() => el.classList.add('hide'), 1600)
+}
+$('taste').addEventListener('pointerdown', () => $('taste').classList.add('hide'))
+const nextCity = () => CITY_ORDER[CITY_ORDER.indexOf(cityId) + 1]
+// fly to another city (the end card) or pick one on the title: the street, food and landmark are built again
+function switchCity(id) {
+  if (id === cityId) return
+  for (const c of customers) removeWalker(c)
+  for (const h of helpers) removeWalker(h)
+  customers.length = 0; helpers.length = 0; queues.forEach((q) => { q.length = 0 }); cashQ.length = 0
+  buildCity(id); relabel(); audio.switchMusic(); save.city = cityId; writeSave(); updateCamera(0, true)
+}
+function flyOn() {
+  const id = nextCity(); if (!id) return
+  const fund = game.fundNext || 0
+  platform.interstitial(() => { switchCity(id); startGame(fund) })
+}
+function doubleFund() {
+  $('fundBtn').classList.add('hide')
+  platform.rewardedAd((ok) => { if (!ok) return; game.fundNext *= 2; drawFund(true); sfx('unlock'); platform.track('reward_fund', { city: cityId }) })
+}
+function drawFund(doubled) {
+  const nx = nextCity(); $('fundRow').classList.toggle('hide', !nx || !game.fundNext)
+  if (!nx) return
+  $('fundLbl').textContent = doubled ? t('fund2') : t('fund'); $('fundTxt').textContent = CITY[nx].cur + game.fundNext
+  $('fundBtnTxt').textContent = t('fund2'); $('fundBtn').classList.toggle('hide', doubled || !platform.ready || !game.fundNext)
+}
+// all 8 lamps: fireworks over the landmark, then the postcard and the flight to the next city
 function clearCity() {
   game.phase = 'clear'; game.clearT = 0; buy.g.visible = false; hudStreet(); sfx('end'); buzz(80)
-  bannerShow(t('clear'), 3)
+  bannerShow(tc('clear'), 3)
   input.x = input.z = 0; input.id = null; $('stick').classList.add('hide')
-  const secs = Math.round(game.time), newBest = !save.bestTime || secs < save.bestTime
+  const secs = Math.max(1, Math.floor(game.time)), rec = bestOf(cityId), newBest = !rec.t || secs < rec.t
   const run = { time: game.time, earned: game.earned, served: game.served, lost: game.lost }
-  const moreServed = run.served > (save.bestServed || 0)
-  save.clears++; if (newBest) save.bestTime = secs; if (moreServed) save.bestServed = run.served
+  const moreServed = run.served > (rec.s || 0)
+  save.clears++; if (newBest) rec.t = secs; if (moreServed) rec.s = run.served
+  const nx = nextCity(); if (nx) save.unlocked = Math.max(save.unlocked, CITY_ORDER.indexOf(nx))
+  // travel money for the next city: 5% of what was earned, in the next city's money (x2 with an ad) (BALANCE.md)
+  game.fundNext = nx ? Math.round(run.earned * 0.05 / city.mul * CITY[nx].mul) : 0
   writeSave()
-  platform.message('gameplay_stopped'); platform.track('city_clear', { city: 'seoul', secs, earned: game.earned, lost: game.lost })
+  platform.message('gameplay_stopped'); platform.track('city_clear', { city: cityId, secs, earned: game.earned, lost: game.lost })
   setTimeout(() => {
-    $('endTitle').textContent = t('clear')
-    for (const [k, v] of [['time', mmss(run.time)], ['earned', '₩' + run.earned], ['served', run.served], ['lost', run.lost]]) { $(k + 'Lbl').textContent = t(k); $(k + 'Txt').textContent = v }
+    $('endTitle').textContent = tc('clear'); $('endTitle').classList.toggle('long', [...tc('clear')].length > 11)
+    for (const [k, v] of [['time', mmss(run.time)], ['earned', city.cur + run.earned], ['served', run.served], ['lost', run.lost]]) { $(k + 'Lbl').textContent = t(k); $(k + 'Txt').textContent = v }
     // records: this run against the best so far (no locked next city: it is not in the game yet)
     $('newBest').textContent = t('newBest'); $('newBest').classList.toggle('hide', !(newBest || moreServed))
-    $('recTimeLbl').textContent = t('best'); $('recTimeTxt').textContent = mmss(save.bestTime); $('recTimeNew').textContent = newBest ? 'NEW' : ''
-    $('recServedLbl').textContent = t('mostServed'); $('recServedTxt').textContent = save.bestServed; $('recServedNew').textContent = moreServed ? 'NEW' : ''
-    $('postFrom').textContent = t('postcard'); $('postMark').textContent = city.stamp
+    $('recTimeLbl').textContent = t('best'); $('recTimeTxt').textContent = mmss(rec.t); $('recTimeNew').textContent = newBest ? 'NEW' : ''
+    $('recServedLbl').textContent = t('mostServed'); $('recServedTxt').textContent = rec.s; $('recServedNew').textContent = moreServed ? 'NEW' : ''
+    $('postFrom').textContent = tc('postcard'); $('postMark').textContent = city.stamp; $('postMark').style.fontSize = city.stamp.length > 6 ? '8px' : ''
+    // the foods tasted in this city, and the flight on (the last city: play again)
+    $('tastedLbl').textContent = t('tasted'); $('tastedImgs').innerHTML = game.tasted.map((i) => `<img src="${FOOD_PIC[i].url}" alt="">`).join('')
+    const nx2 = nextCity()
+    $('againBtn').textContent = nx2 ? `✈ ${t('fly').replace('{city}', t('city_' + nx2))}` : t('again')
+    $('ticket').textContent = nx2 ? `${city.code} ✈ ${CITY[nx2].code}` : ''; drawFund(false)
     $('end').classList.remove('hide'); $('hud').classList.add('hide'); $('offerBtn').classList.add('hide'); $('map').classList.add('hide')
     game.phase = 'end'
     if (newBest || moreServed) setTimeout(() => sfx('unlock'), 900)
@@ -1042,14 +1328,28 @@ function goTitle() {
   customers.length = 0; helpers.length = 0; queues.forEach((q) => { q.length = 0 }); cashQ.length = 0
   resetStalls(); arch.visible = false; setStep(0)
   Object.assign(player, { x: 0, z: -1.5, items: [], face: Math.PI, path: [] })
-  for (const id of ['end', 'panel', 'hud', 'map', 'offerBtn']) $(id).classList.add('hide')
+  for (const id of ['end', 'panel', 'hud', 'map', 'offerBtn', 'stamp', 'taste']) $(id).classList.add('hide')
+  clearTimeout(game.stampT); clearTimeout(game.tasteT); $('banner').classList.remove('on'); bannerT = 0
   $('title').classList.remove('hide'); applyText()
 }
 // every fixed text on the screens (again after a language change)
 function applyText() {
-  document.documentElement.lang = lang; document.title = t('title')
-  $('titleTxt').textContent = t('title'); $('subTxt').textContent = t('sub'); $('startBtn').textContent = t('start')
-  $('bestRow').classList.toggle('hide', !save.bestTime); $('bestLbl').textContent = t('best'); $('bestTxt').textContent = mmss(save.bestTime)
+  document.documentElement.lang = lang; document.title = 'Night Market Tycoon: Baekho Pocha'
+  $('titleTxt').textContent = t('title'); $('subTxt').textContent = t('brand'); $('startBtn').textContent = t('start')
+  const rec = bestOf(cityId)
+  $('bestRow').classList.toggle('hide', !rec.t); $('bestLbl').textContent = t('best'); $('bestTxt').textContent = mmss(rec.t)
+  // cities reached: one chip each with its best time; tapping one builds that street behind the title
+  const host = $('cities'); host.classList.toggle('hide', !save.unlocked); host.innerHTML = ''
+  if (save.unlocked) {
+    const h = document.createElement('div'); h.className = 'pickLbl'; h.textContent = t('pick'); host.appendChild(h)
+    for (const id of CITY_ORDER.slice(0, save.unlocked + 1)) {
+      const b = document.createElement('button'); b.className = 'sub' + (id === cityId ? ' on' : '')
+      const bt = save.best[id]?.t
+      b.innerHTML = `<b></b><small>${bt ? '🏆 ' + mmss(bt) : '—'}</small>`; b.firstChild.textContent = t('city_' + id)
+      b.onclick = () => { sfx('click'); switchCity(id); applyText() }
+      host.appendChild(b)
+    }
+  }
   $('againBtn').textContent = t('again'); $('homeBtn').textContent = t('home')
   $('resumeBtn').textContent = game.phase === 'play' ? t('resume') : t('close'); $('quitBtn').textContent = t('quit')
   if (!$('panel').classList.contains('hide')) renderPanel()
@@ -1091,7 +1391,8 @@ function pauseGame() { if (game.phase === 'play' && !game.paused) openPanel() }
 document.addEventListener('visibilitychange', () => { applyVolume(); if (document.hidden) pauseGame() })
 const tap = (id, fn) => $(id).addEventListener('click', () => { unlockAudio(); sfx('click', 0.4); fn() })
 tap('startBtn', startGame)
-tap('againBtn', () => platform.interstitial(startGame))
+tap('againBtn', () => (nextCity() ? flyOn() : platform.interstitial(startGame)))
+tap('fundBtn', doubleFund)
 tap('homeBtn', () => platform.interstitial(goTitle))
 tap('setBtn', () => ($('panel').classList.contains('hide') ? openPanel() : closePanel()))
 tap('resumeBtn', closePanel)
@@ -1123,7 +1424,7 @@ addEventListener('pointerup', lift); addEventListener('pointercancel', lift)
 addEventListener('keydown', (e) => {
   input.keys.add(e.code)
   if (e.code === 'Escape' || e.code === 'KeyP') { if (!$('panel').classList.contains('hide')) closePanel(); else pauseGame() }
-  if (e.code === 'Enter' && $('panel').classList.contains('hide') && !e.repeat) { if (game.phase === 'title') startGame(); else if (game.phase === 'end') platform.interstitial(startGame) }
+  if (e.code === 'Enter' && $('panel').classList.contains('hide') && !e.repeat) { if (game.phase === 'title') startGame(); else if (game.phase === 'end') (nextCity() ? flyOn() : platform.interstitial(startGame)) }
 })
 addEventListener('keyup', (e) => input.keys.delete(e.code))
 addEventListener('blur', () => input.keys.clear())
@@ -1225,6 +1526,12 @@ function step(dt, now) {
     game.rush = rushNow
     game.spawnT -= dt
     if (game.spawnT <= 0) { spawnCustomer(); game.spawnT = spawnGap() }
+    if (train) {
+      game.trainT -= dt
+      if (game.trainT <= 0) { game.trainT += TWIST.tokyo.train; train.position.x = -34; train.userData.drop = true }
+      if (train.position.x < 40) train.position.x += dt * 22
+      if (train.userData.drop && train.position.x > -6) { train.userData.drop = false; for (let k = 0; k < 3; k++) spawnCustomer() }
+    }
     movePlayer(dt)
     $('moneyTxt').textContent = game.money
   } else animate(player.rig, false, dt, player.items.length > 0)
@@ -1243,7 +1550,7 @@ function step(dt, now) {
   if (g) arrow.position.set(g.x, 1.4 + Math.sin(now / 160) * 0.18, g.z)
   for (const p of pads) if (p.kind !== 'buy') p.g.scale.setScalar(p === g ? 1 + Math.sin(now / 120) * 0.08 : 1)
 }
-resetStalls(); setStep(0); updateCamera(0, true)
+buildCity(CITY_ORDER.includes(Q.get('city')) ? Q.get('city') : 'seoul'); updateCamera(0, true)
 applyText()
 requestAnimationFrame(frame)
 // boot: platform first (language, storage), then the save; the title waits for neither longer than a few seconds
@@ -1252,10 +1559,11 @@ requestAnimationFrame(frame)
   await readSave()
   const want = pickLang(Q.get('lang')) || save.lang || lang
   if (want !== lang) lang = want
+  if (!Q.get('city') && save.city !== cityId) switchCity(save.city)
   relabel(); applyVolume()
   $('setBtn').classList.remove('hide')
   platform.message('game_ready')
   window.__ready = true
 })()
 
-if (Q.has('debug')) window.__gt = { pads, MAX_GRILL, RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, stalls, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, STEPS, findPath, camera }
+if (Q.has('debug')) window.__gt = { get cityId() { return cityId }, get stalls() { return stalls }, get pads() { return pads }, get STEPS() { return STEPS }, get arch() { return arch }, switchCity, buildCity, tasteCard, setStack, nextCity, flyOn, FOOD_PIC, MAX_GRILL, RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, findPath, camera }
