@@ -5,7 +5,7 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, CITY_ORDER, LANGUAGES } from './strings.js?v=e9f098c'
+import { STR, CITY, CITY_ORDER, LANGUAGES } from './strings.js?v=6661a4f'
 let cityId = 'seoul', city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
@@ -1285,7 +1285,7 @@ function doubleFund() {
 function drawFund(doubled) {
   const nx = nextCity(); $('fundRow').classList.toggle('hide', !nx || !game.fundNext)
   if (!nx) return
-  $('fundLbl').textContent = doubled ? t('fund2') : t('fund'); $('fundTxt').textContent = CITY[nx].cur + game.fundNext
+  $('fundLbl').textContent = `${doubled ? t('fund2') : t('fund')} (${t('city_' + nx)})`; $('fundTxt').textContent = CITY[nx].cur + game.fundNext
   $('fundBtnTxt').textContent = t('fund2'); $('fundBtn').classList.toggle('hide', doubled || !platform.ready || !game.fundNext)
 }
 // all 8 lamps: fireworks over the landmark, then the postcard and the flight to the next city
@@ -1301,7 +1301,7 @@ function clearCity() {
   // travel money for the next city: 5% of what was earned, in the next city's money (x2 with an ad) (BALANCE.md)
   game.fundNext = nx ? Math.round(run.earned * 0.05 / city.mul * CITY[nx].mul) : 0
   writeSave()
-  platform.message('gameplay_stopped'); platform.track('city_clear', { city: cityId, secs, earned: game.earned, lost: game.lost })
+  perf.flush(); platform.message('gameplay_stopped'); platform.track('city_clear', { city: cityId, secs, earned: game.earned, lost: game.lost })
   setTimeout(() => {
     $('endTitle').textContent = tc('clear'); $('endTitle').classList.toggle('long', [...tc('clear')].length > 11)
     for (const [k, v] of [['time', mmss(run.time)], ['earned', city.cur + run.earned], ['served', run.served], ['lost', run.lost]]) { $(k + 'Lbl').textContent = t(k); $(k + 'Txt').textContent = v }
@@ -1321,6 +1321,7 @@ function clearCity() {
   }, Q.has('fast') ? 0 : 3200) // ?fast: tests skip the fireworks wait
 }
 function goTitle() {
+  perf.flush()
   if (game.phase === 'play') platform.message('gameplay_stopped')
   game.phase = 'title'; game.paused = false
   for (const c of customers) removeWalker(c)
@@ -1431,7 +1432,58 @@ addEventListener('blur', () => input.keys.clear())
 
 // ---------------------------------------------------------------- camera
 const camAt = new THREE.Vector3(0, 0, -3), camPos = new THREE.Vector3(), look = new THREE.Vector3()
-function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix() }
+// slow devices (PLAYBOOK 4, Gulp Town 433cdf0): when play stays under 40fps for 3 s the picture gets cheaper, one step at a time
+// (pixel ratio 2 -> 1.25 -> 1 -> 0.85; this street has no shadows to turn off); what happens in the game never changes
+const quality = {
+  level: 0, sum: 0, n: 0, wait: 0,
+  frame(raw, playing) {
+    if (!playing || this.level >= 3 || raw > 250) return
+    this.sum += raw; this.n++
+    if (this.sum < 3000) return
+    const fps = this.n / (this.sum / 1000); this.sum = 0; this.n = 0
+    if (this.wait > 0) { this.wait--; return }
+    if (fps >= 40) return
+    this.level++; this.wait = 1; resize()
+  },
+}
+// performance_sample for Playgama telemetry: 30 s of play at a time (a frame counts only if the one before was play too,
+// so the gap after a pause, an ad, a menu or a hidden tab never becomes a frozen frame)
+const IS_TEST = SPEED > 1 || /[?&](auto|fast|bench|heavy|screen|shot)/.test(location.search)
+const perf = {
+  frames: [], active: 0, start: 0, prev: false, errors: 0, rejects: 0,
+  frame(now, raw, playing) {
+    const on = playing && !document.hidden
+    if (on && this.prev) { if (!this.start) this.start = now - raw; this.frames.push(raw); this.active += raw }
+    this.prev = on
+    if (this.active >= 30000) this.flush(now)
+  },
+  flush(now = performance.now()) {
+    const f = this.frames
+    if (f.length >= 30) {
+      const sorted = [...f].sort((a, b) => a - b), at = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]
+      const fps = f.map((ms) => 1000 / Math.max(ms, 1)).sort((a, b) => a - b), over = (ms) => f.filter((x) => x > ms).length
+      const r1 = (v) => Math.round(v * 10) / 10, mem = performance.memory
+      platform.track('performance_sample', {
+        target_fps: 60, window_ms: Math.round(now - this.start), active_ms: Math.round(this.active), frame_count: f.length,
+        fps_avg: r1(f.length / (this.active / 1000)), fps_p10: r1(fps[Math.floor(fps.length * 0.1)]),
+        frame_time_p50_ms: r1(at(0.5)), frame_time_p95_ms: r1(at(0.95)), frame_time_p99_ms: r1(at(0.99)), frame_time_max_ms: r1(sorted[sorted.length - 1]),
+        frames_over_50ms: over(50), frames_over_100ms: over(100), frames_over_250ms: over(250), frames_over_500ms: over(500), frames_over_1000ms: over(1000),
+        js_error_count: this.errors, unhandled_rejection_count: this.rejects, quality_level: quality.level, city: cityId,
+        is_mobile: matchMedia('(pointer: coarse)').matches, screen_w: innerWidth, screen_h: innerHeight, pixel_ratio: r1(renderer.getPixelRatio()), cpu_cores: navigator.hardwareConcurrency || 0,
+        is_test: IS_TEST,
+        ...(mem ? { memory_used_mb: Math.round(mem.usedJSHeapSize / 1048576), memory_measurement_supported: true, memory_measurement_type: 'js_heap' } : { memory_measurement_supported: false }),
+      })
+    }
+    this.frames = []; this.active = 0; this.start = 0; this.errors = 0; this.rejects = 0
+  },
+}
+addEventListener('error', () => { perf.errors++ })
+addEventListener('unhandledrejection', () => { perf.rejects++ })
+function resize() {
+  const w = innerWidth, h = innerHeight
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, [2, 1.25, 1, 0.85][quality.level]))
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix()
+}
 addEventListener('resize', resize); resize()
 function updateCamera(dt, snap) {
   const aspect = camera.aspect, tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), wide = aspect >= 1
@@ -1504,8 +1556,10 @@ function updateEdge() {
 let last = performance.now()
 function frame(now) {
   requestAnimationFrame(frame)
-  const real = Math.min(0.05, (now - last) / 1000); last = now
+  const raw = now - last, real = Math.min(0.05, raw / 1000); last = now
   const hold = game.paused || platform.adOpen || platform.paused
+  const playing = game.phase === 'play' && !hold && !IS_TEST
+  perf.frame(now, raw, playing); quality.frame(raw, playing)
   if (!hold) for (let n = 0; n < (game.film || SPEED); n++) step(real, now) // game.film: time-lapse for shorts (tools/short_rec.mjs)
   updateCamera(real)
   if (game.phase === 'play' && now - mapT > 90) { mapT = now; drawMap(now) }
@@ -1563,7 +1617,8 @@ requestAnimationFrame(frame)
   relabel(); applyVolume()
   $('setBtn').classList.remove('hide')
   platform.message('game_ready')
+  $('loading').classList.add('gone'); setTimeout(() => $('loading').remove(), 500)
   window.__ready = true
 })()
 
-if (Q.has('debug')) window.__gt = { get cityId() { return cityId }, get stalls() { return stalls }, get pads() { return pads }, get STEPS() { return STEPS }, get arch() { return arch }, switchCity, buildCity, tasteCard, setStack, nextCity, flyOn, FOOD_PIC, MAX_GRILL, RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, findPath, camera }
+if (Q.has('debug')) window.__gt = { get cityId() { return cityId }, get stalls() { return stalls }, get pads() { return pads }, get STEPS() { return STEPS }, get arch() { return arch }, switchCity, buildCity, tasteCard, setStack, step, quality, perf, THREE, nextCity, flyOn, FOOD_PIC, MAX_GRILL, RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, findPath, camera }

@@ -157,3 +157,14 @@ html, body { overscroll-behavior: none; -webkit-touch-callout: none; }
 }
 #endTitle { word-break: keep-all; }
 #endTitle.long { font-size: 24px; }
+
+/* loading picture (11-15 user: "why only letters on a colour"): the real cover on top (CSS background, so it never holds the
+   page back), the bar on a dark band under it so it covers nothing; the cover already carries the title */
+#loading { position: fixed; inset: 0; z-index: 90; background: #1d1140; display: flex; flex-direction: column; transition: opacity .4s; }
+#loading .pic { flex: 1; background: url(img/loading_portrait.webp) center top / cover no-repeat; }
+#loading .band { flex: none; height: 64px; background: #120a2a; display: flex; align-items: center; justify-content: center; }
+#loading .bar { width: min(60vw, 320px); height: 10px; border-radius: 5px; background: #2e2456; overflow: hidden; }
+#loading .bar i { display: block; width: 40%; height: 100%; border-radius: 5px; background: #ffd23f; animation: loadbar 1.1s ease-in-out infinite alternate; }
+@keyframes loadbar { from { transform: translateX(-10%); } to { transform: translateX(160%); } }
+#loading.gone { opacity: 0; pointer-events: none; }
+@media (min-aspect-ratio: 1/1) { #loading .pic { background-image: url(img/loading_landscape.webp); background-size: contain; background-position: center; } }
