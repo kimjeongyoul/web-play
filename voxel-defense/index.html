@@ -89,7 +89,7 @@ button{font-family:inherit;cursor:pointer;color:#2b2118}
 </div>
 <div id="banner" class="ui"></div>
 <div id="toast" class="ui"></div>
-<div id="hint" class="ui">Click a grass tile to build &nbsp;|&nbsp; Click a tower to upgrade &nbsp;|&nbsp; Drag to rotate, wheel to zoom</div>
+<div id="hint" class="ui">Click a grass tile to build &nbsp;|&nbsp; Click a tower to upgrade &nbsp;|&nbsp; Drag to rotate, pinch or wheel to zoom</div>
 <div id="info" class="ui panel"><b id="iName"></b><button class="btn" id="bUp"></button><button class="btn" id="bSell"></button></div>
 <div id="cards" class="ui"></div>
 <div id="autoTag" class="ui">AUTO PLAY</div>
@@ -931,8 +931,11 @@ hl.rotation.x=-Math.PI/2;hl.visible=false;scene.add(hl);
 var rangeRing=new THREE.Mesh(new THREE.RingGeometry(0.975,1,72),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.75,side:THREE.DoubleSide,depthWrite:false}));
 rangeRing.rotation.x=-Math.PI/2;rangeRing.visible=false;scene.add(rangeRing);
 function setMouse(e){var r=canvas.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*2-1;mouse.y=-((e.clientY-r.top)/r.height)*2+1;hasMouse=true;}
-canvas.addEventListener('pointerdown',function(e){cam.drag=true;cam.moved=false;cam.lx=e.clientX;cam.ly=e.clientY;cam.sx=e.clientX;cam.sy=e.clientY;setMouse(e);try{canvas.setPointerCapture(e.pointerId);}catch(_){}});
+var pts={},pinch=0;function ptN(){return Object.keys(pts).length;}function ptD(){var k=Object.keys(pts);return Math.hypot(pts[k[0]].x-pts[k[1]].x,pts[k[0]].y-pts[k[1]].y);}
+canvas.addEventListener('pointerdown',function(e){pts[e.pointerId]={x:e.clientX,y:e.clientY};if(ptN()===2){pinch=ptD();cam.moved=true;cam.idle=2.5;try{canvas.setPointerCapture(e.pointerId);}catch(_){}return;}cam.drag=true;cam.moved=false;cam.lx=e.clientX;cam.ly=e.clientY;cam.sx=e.clientX;cam.sy=e.clientY;setMouse(e);try{canvas.setPointerCapture(e.pointerId);}catch(_){}});
 canvas.addEventListener('pointermove',function(e){
+  if(pts[e.pointerId])pts[e.pointerId]={x:e.clientX,y:e.clientY};
+  if(ptN()>=2&&pinch>0){var d=ptD();if(d>0){cam.r=Math.max(20,Math.min(64,cam.r*pinch/d));pinch=d;}cam.idle=2.5;return;}
   setMouse(e);
   if(cam.drag){
     if(!cam.moved&&Math.hypot(e.clientX-cam.sx,e.clientY-cam.sy)>5)cam.moved=true;
@@ -940,7 +943,7 @@ canvas.addEventListener('pointermove',function(e){
     cam.lx=e.clientX;cam.ly=e.clientY;
   }
 });
-function pointerEnd(e){if(!cam.drag)return;cam.drag=false;canvas.style.cursor='grab';if(!cam.moved&&e.type==='pointerup'){setMouse(e);pick();onClick();}}
+function pointerEnd(e){delete pts[e.pointerId];if(ptN()<2&&pinch>0){pinch=0;var k=Object.keys(pts)[0];if(k){cam.lx=pts[k].x;cam.ly=pts[k].y;}return;}if(!cam.drag)return;cam.drag=false;canvas.style.cursor='grab';if(!cam.moved&&e.type==='pointerup'){setMouse(e);pick();onClick();}}
 canvas.addEventListener('pointerup',pointerEnd);canvas.addEventListener('pointercancel',pointerEnd);
 canvas.addEventListener('pointerleave',function(){hasMouse=false;});
 canvas.addEventListener('wheel',function(e){e.preventDefault();cam.r=Math.max(20,Math.min(64,cam.r+e.deltaY*0.03));},{passive:false});
