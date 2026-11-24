@@ -1372,7 +1372,7 @@ function rollCards(){
 }
 function cardInfo(c){
   switch(c.k){
-  case 'unlock':return {tag:T('c_new'),col:FAMC[TOWERS[c.tw].fam],title:T('t_'+c.tw),desc:T('d_'+c.tw),icon:ICON[c.tw]};
+  case 'unlock':return {tag:T('c_new'),col:FAMC[TOWERS[c.tw].fam],title:T('t_'+c.tw),desc:'',icon:ICON[c.tw]};
   case 'dmg':return {tag:T('c_boost'),col:FAMC[c.fam],title:T('c_dmg',T('fam_'+c.fam)),desc:T('c_dmgD',T('fam_'+c.fam)),icon:glyph('dmg',FAMC[c.fam])};
   case 'gold':return {tag:T('gold'),col:'#e8a200',title:T('c_gold'),desc:T('c_goldD',c.v),icon:glyph('gold','#e8a200')};
   case 'income':return {tag:T('gold'),col:'#e8a200',title:T('c_income'),desc:T('c_incomeD'),icon:glyph('income','#e8a200')};
@@ -1498,7 +1498,7 @@ function updHud(){
     const off=t.lvl>=3||G.gold<upCost(t);if(hudCache.uo!==off){hudCache.uo=off;$('bUp').classList.toggle('off',off);}
     setTxt('bSell',T('sell',Math.round(t.spent*0.6)));}
   else{const dk=(G.built===0&&!AUTO?'h':'')+G.sel+LANG;if(hudCache.dk!==dk){hudCache.dk=dk;const d=$('desc');d.textContent='';
-      if(G.built===0&&!AUTO)d.textContent=T('hint');else{const e=document.createElement('em');e.textContent=T('t_'+G.sel);d.appendChild(e);d.appendChild(document.createTextNode(' · '+T('d_'+G.sel)));}}}
+      if(G.built===0&&!AUTO)d.textContent=T('hint');else{const e=document.createElement('em');e.textContent=T('t_'+G.sel);d.appendChild(e);}}}
 }
 function applyLang(){
   document.documentElement.lang=LANG;document.title=T('title');
