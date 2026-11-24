@@ -1,0 +1,25 @@
+{
+	"$schema": "https://bridge.playgama.com/v2/stable/schema.json",
+	"advertisement": {
+		"interstitial": {
+			"preloadOnStart": true
+		},
+		"rewarded": {
+			"preloadOnStart": false
+		},
+		"useBuiltInErrorPopup": true,
+		"backfillId": ""
+	},
+	"payments": [],
+	"saas": {
+		"publicToken": "cmwumkrrl03l7li0hnje8j0jd",
+		"leaderboards": {
+			"platforms": ["playgama", "qa_tool"]
+		}
+	},
+	"leaderboards": [
+		{ "id": "best_score" },
+		{ "id": "best_score_daily" }
+	],
+	"sendAnalyticsEvents": true
+}
