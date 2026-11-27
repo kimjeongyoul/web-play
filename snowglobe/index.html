@@ -261,6 +261,7 @@ const PATH=[[7,-2.2],[7,3],[11,6.5],[12.5,11],[9,14],[6,10],[7,3],[7,-2.2]];
 const SEG=[];let PLEN=0;for(let i=1;i<PATH.length;i++){const l=Math.hypot(PATH[i][0]-PATH[i-1][0],PATH[i][1]-PATH[i-1][1]);SEG.push(l);PLEN+=l;}
 function pathAt(s){for(let i=0;i<SEG.length;i++){if(s<=SEG[i]||i==SEG.length-1){const k=Math.min(1,s/SEG[i]),a=PATH[i],b=PATH[i+1];return[a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k,b[0]-a[0],b[1]-a[1]];}s-=SEG[i];}}
 function groundAt(x,z){const X=Math.round(x),Z=Math.round(z);let y=0;while(y<4&&has(X,y,Z))y++;return y;}
+const MAN_LINES=['아야! 코 떨어져!','녹는다 녹아~','차가워!','어지러워~','당근 건드리지 마!','으아 빙글빙글'];
 const VR=rng(7),vill=[],LINES=['아야!','아야 아야!','왜 눌러요!','간지러워~','안녕!','헤헤','으악!','눈 온다!','나 바빠요','뭐야 뭐야'];
 for(let i=0;i<6;i++){const g=new THREE.Group(),body=new THREE.Group();g.add(body);
   const add=(geo,mat,x,y,z,sx=1,sy=1,sz=1)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=true;m.userData.vi=i;body.add(m);return m;};
@@ -383,6 +384,12 @@ window.__draw=function(t){
       if(v.sayAt!==v.hit){v.sayAt=v.hit;let w;do{w=LINES[(Math.random()*LINES.length)|0];}while(w===v.lastLine&&LINES.length>1);v.lastLine=w;b.textContent=w;}
       v.g.getWorldPosition(P);P.y+=4.6*v.g.scale.y;P.project(cam);
       b.style.left=((P.x+1)/2*innerWidth)+'px';b.style.top=((1-P.y)/2*innerHeight-4-a*10)+'px';b.style.opacity=a<1.2?1:(1.6-a)/0.4;}
+    else if(b)b.style.opacity=0;}
+  {const a=age('man');let b=live.manSay;
+    if(a<1.8){if(!b){b=live.manSay=document.createElement('div');b.className='say';document.body.appendChild(b);}
+      if(live.manAt!==live.hit.man){live.manAt=live.hit.man;let w;do{w=MAN_LINES[(Math.random()*MAN_LINES.length)|0];}while(w===live.manLine);live.manLine=w;b.textContent=w;}
+      const m=piv.man;P.set(SX,(m?m.position.y:0)+12.5,SZ);globe.localToWorld(P);P.project(cam);
+      b.style.left=((P.x+1)/2*innerWidth)+'px';b.style.top=((1-P.y)/2*innerHeight-4-a*10)+'px';b.style.opacity=a<1.4?1:(1.8-a)/0.4;}
     else if(b)b.style.opacity=0;}
   renderer.render(scene,cam);
   ctx.drawImage(off,0,0,W,H);
