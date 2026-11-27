@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko"><head><meta charset="utf-8"><meta property="og:title" content="스노우볼"><meta property="og:description" content="돌리고 흔들고, 확대하면 유리 안으로. 마을 사람을 눌러 보세요"><meta property="og:image" content="https://kimjeongyoul.github.io/web-play/snowglobe/share.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="https://kimjeongyoul.github.io/web-play/snowglobe/"><meta property="og:type" content="website"><meta name="twitter:card" content="summary_large_image"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>스노우볼</title>
+<title>스노우볼</title><link rel="icon" href="data:,">
 <style>
 :root{--bg:#05070d;--hint:#9fb0d0;color-scheme:dark}
 body{position:fixed;inset:0}
@@ -8,31 +8,37 @@ html,body{margin:0;max-width:100vw;height:100%;width:100%;background:var(--bg);o
 body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 canvas{position:fixed;inset:0;display:block;width:100vw;height:100vh;height:100dvh;touch-action:none;cursor:grab}
 canvas.grab{cursor:grabbing}
-#hint{position:fixed;left:16px;right:16px;overflow:hidden;bottom:calc(14px + env(safe-area-inset-bottom));justify-content:center;pointer-events:none;display:flex;gap:22px;opacity:.75;transition:opacity 1.2s}
+#hint{position:fixed;left:16px;right:16px;overflow:hidden;bottom:calc(24px + env(safe-area-inset-bottom));justify-content:center;pointer-events:none;display:flex;gap:22px;opacity:.75;transition:opacity 1.2s}
 #hint.off{opacity:0}
 .say{position:fixed;left:0;top:0;pointer-events:none;font:700 15px/1.2 system-ui,sans-serif;color:#1b1d24;background:#fff;padding:6px 11px;border-radius:14px;white-space:nowrap;transform:translate(-50%,-100%);opacity:0;transition:opacity .15s;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .say::after{content:"";position:absolute;left:50%;bottom:-6px;margin-left:-6px;border:6px solid transparent;border-bottom:0;border-top-color:#fff}
 #home{position:fixed;top:calc(14px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));width:46px;height:46px;border-radius:50%;border:1px solid rgba(159,176,208,.35);background:rgba(5,7,13,.55);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 #home svg{width:24px;height:24px;stroke:var(--hint);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #hint span{max-width:100%;box-sizing:border-box;word-break:keep-all;color:var(--hint);font:500 15px/1.4 system-ui,sans-serif;background:rgba(5,7,13,.55);padding:6px 14px;border-radius:999px;text-align:center}
+#perf{position:fixed;left:calc(8px + env(safe-area-inset-left));bottom:calc(5px + env(safe-area-inset-bottom));max-width:calc(100vw - 16px);overflow:hidden;white-space:nowrap;pointer-events:none;font:500 10px/1.2 ui-monospace,Menlo,Consolas,monospace;color:rgba(159,176,208,.5);text-shadow:0 0 3px rgba(5,7,13,.6)}
 </style>
-<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.186.0/build/three.webgpu.js","three/webgpu":"https://unpkg.com/three@0.186.0/build/three.webgpu.js","three/tsl":"https://unpkg.com/three@0.186.0/build/three.tsl.js"}}</script>
 </head><body><canvas id="c" width="800" height="800"></canvas>
 <button id="home" aria-label="처음 구도로" title="처음 구도로"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
+<div id="perf" aria-hidden="true"></div>
 <div id="hint" aria-hidden="true"><span>끌어서 돌리기 · 흔들면 눈보라 · 확대하면 안으로</span></div>
 <script type="module">
 import * as THREE from 'three';
+import {Fn,If,instancedArray,instanceIndex,uniform,float,vec2,vec3,vec4,ivec2,hash as thash,textureLoad,uv,length,dot,max,min,abs,sqrt,sin,cos,clamp,mix,round,smoothstep,pow,reflect,cross,step,normalView,positionView,modelWorldMatrix,cameraPosition} from 'three/tsl';
 let W=800,H=800;const TAU=Math.PI*2;
-const view=document.getElementById('c'),ctx=view.getContext('2d');
-const off=document.createElement('canvas');off.width=W;off.height=H;
-const renderer=new THREE.WebGLRenderer({canvas:off,antialias:true,preserveDrawingBuffer:true});
+const Q_=new URLSearchParams(location.search);
+const view=document.getElementById('c'),perfEl=document.getElementById('perf');
+// WebGPU first; the renderer falls back to WebGL2 by itself when navigator.gpu is missing (?webgl forces it, for testing)
+const renderer=new THREE.WebGPURenderer({canvas:view,antialias:true,forceWebGL:Q_.has('webgl')});
 renderer.setPixelRatio(1);
+try{await renderer.init();}catch(e){perfEl.textContent='3D를 켤 수 없어요 · 브라우저를 최신으로 바꿔 주세요';throw e;}
+const BACKEND=renderer.backend&&renderer.backend.isWebGPUBackend?'webgpu':'webgl2';
 function fit(){const dpr=Math.min(window.devicePixelRatio||1,2),w=innerWidth,h=innerHeight;
   let k=dpr;const MAXPX=2.4e6;if(w*h*k*k>MAXPX)k=Math.sqrt(MAXPX/(w*h));
   W=Math.max(2,Math.round(w*k));H=Math.max(2,Math.round(h*k));
-  off.width=W;off.height=H;view.width=W;view.height=H;renderer.setSize(W,H,false);}
+  renderer.setSize(W,H,false);}
 fit();addEventListener('resize',fit);
-renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.3;
 
 // ---------- seeded randomness ----------
@@ -189,14 +195,63 @@ const starSpr=glow(TX,29,TZ,0xffe9a8,18,tStar);
 const NS=10,smoke=new THREE.InstancedMesh(cube,new THREE.MeshStandardMaterial({color:0xcfd5e2,roughness:1,envMapIntensity:0.3}),NS);
 smoke.frustumCulled=false;globe.add(smoke);
 
-// falling snow
-const NF=1200,FR=rng(99),FL=[];
-for(let i=0;i<NF;i++){const an=FR()*TAU,rr=Math.sqrt(FR())*22.4,x=Math.cos(an)*rr,z=Math.sin(an)*rr;
-  FL.push({x,z,top:9.5+Math.sqrt(Math.max(0,625-(rr+1.3)*(rr+1.3))),bot:hgt(Math.round(x),Math.round(z))+0.2,f0:FR(),n:FR()<0.72?1:2,
-    m:1+((FR()*3)|0),m2:1+((FR()*3)|0),p1:FR()*TAU,p2:FR()*TAU,sw:0.3+FR()*0.8,s:0.2+FR()*0.3,r1:FR()*TAU,r2:FR()*TAU,k1:((FR()*5)|0)-2,k2:1+((FR()*3)|0)});}
-const snow=new THREE.InstancedMesh(cube,new THREE.MeshBasicMaterial({toneMapped:false}),NF);snow.frustumCulled=false;
-FL.forEach((f,i)=>{const q=FR();COL.setRGB(0.8+0.2*q,0.86+0.14*q,1);M4.makeTranslation(f.x,f.top,f.z);snow.setMatrixAt(i,M4);snow.setColorAt(i,COL);});
-globe.add(snow);
+// falling snow: GPU compute (TSL). positions/velocities live in storage buffers; one compute pass per frame moves every flake.
+// state per flake: pos.xyz (globe space), pos.w = 1 in the air / 0 lying on the snow; vel.xyz
+const NMAX=Math.max(20000,Math.min(400000,parseInt(Q_.get('n'))||20000)),NB=Math.ceil(NMAX/64)*64+64,NMIN=20000;
+let NF=BACKEND=='webgpu'?NMAX:Math.min(NMAX,40000);
+const SCY=10,SRAD=24.4;// inside of the glass in globe space
+// height field: top of the highest voxel per (x,z) cell, so flakes land on roofs, the tree, the snowman
+const HF=new Float32Array(49*49).fill(-0.4);
+for(const v of vox.values()){const ix=v.x+24,iz=v.z+24;if(ix<0||ix>48||iz<0||iz>48)continue;HF[iz*49+ix]=Math.max(HF[iz*49+ix],v.y+1);}
+const hfAt=(x,z)=>HF[Math.max(0,Math.min(48,Math.round(z)+24))*49+Math.max(0,Math.min(48,Math.round(x)+24))];
+const hData=new Uint8Array(49*49*4);for(let i=0;i<49*49;i++)hData[i*4]=Math.max(0,Math.min(255,Math.round((HF[i]+1)*8)));
+const hTex=new THREE.DataTexture(hData,49,49,THREE.RGBAFormat,THREE.UnsignedByteType);hTex.minFilter=hTex.magFilter=THREE.NearestFilter;hTex.needsUpdate=true;
+const posB=instancedArray(NB,'vec4'),velB=instancedArray(NB,'vec4');
+{const PA=posB.value.array,FR=rng(99);// start like the old globe: most flakes spread through the air, the rest on the snow
+  for(let i=0;i<NB;i++){let x,y,z;
+    if(FR()<0.04){do{x=(FR()*2-1)*SRAD;y=SCY+(FR()*2-1)*SRAD;z=(FR()*2-1)*SRAD;}while(x*x+(y-SCY)**2+z*z>SRAD*SRAD||y<hfAt(x,z)+0.5);PA[i*4+3]=1;}
+    else{const an=FR()*TAU,rr=Math.sqrt(FR())*22.4;x=Math.cos(an)*rr;z=Math.sin(an)*rr;y=hfAt(x,z)+0.1;PA[i*4+3]=0;}
+    PA[i*4]=x;PA[i*4+1]=y;PA[i*4+2]=z;}}
+const U={size:uniform(1),dt:uniform(0),t:uniform(0),lift:uniform(0),kick:uniform(0),pow:uniform(0),seed:uniform(0),spawn:uniform(0.004)};
+const hAt=P=>textureLoad(hTex,ivec2(clamp(round(P.x).add(24),0,48).toInt(),clamp(round(P.z).add(24),0,48).toInt())).r.mul(255/8).sub(1);
+const snowStep=Fn(()=>{
+  const i=float(instanceIndex),pe=posB.element(instanceIndex),ve=velB.element(instanceIndex);
+  const P=pe.xyz.toVar(),V=ve.xyz.toVar(),air=pe.w.toVar(),L=U.lift,S=i.add(U.seed);
+  const r1=thash(i),r2=thash(i.add(5e5)),r3=thash(i.add(1e6));
+  // shake: nearly every flake gets a kick (up and sideways), lying ones take off
+  If(U.kick.greaterThan(0).and(thash(S.add(15e5)).lessThan(U.kick)),()=>{
+    const a=thash(S.add(2e6)).mul(TAU),b=thash(S.add(25e5)),sp=b.mul(8).add(4).mul(U.pow);
+    V.addAssign(vec3(cos(a).mul(sp),b.mul(5).add(2).mul(U.pow),sin(a).mul(sp)));air.assign(1);});
+  If(air.greaterThan(0.5),()=>{
+    const rh=max(length(vec2(P.x,P.z)),0.5),tang=vec3(P.z.negate().div(rh),0,P.x.div(rh)),T=U.t;
+    const fall=r1.mul(2).add(1.5),hT=r3.mul(22).add(1.5);// hT: the height this flake drifts to while the globe swirls (fills the whole glass, no crust under the dome)
+    const sway=vec3(sin(T.mul(r2.mul(1.2).add(0.6)).add(r1.mul(TAU))),0,cos(T.mul(r3.mul(1.2).add(0.5)).add(r2.mul(TAU)))).mul(0.5);
+    const turb=vec3(sin(P.y.mul(0.31).add(T.mul(1.9)).add(r1.mul(6.28))),sin(P.x.mul(0.23).add(P.z.mul(0.19)).add(T.mul(1.3)).add(r3.mul(6.28))),cos(P.z.mul(0.29).add(T.mul(2.3)).add(r2.mul(6.28))));
+    const tgt=sway.add(tang.mul(r2.mul(7).add(3)).add(turb.mul(vec3(3.5,2.5,3.5))).mul(L)).add(vec3(0,fall.mul(L.mul(-0.85).add(1)).negate().add(hT.sub(P.y).mul(L.mul(0.45))),0));
+    V.addAssign(tgt.sub(V).mul(min(1,U.dt.mul(1.3))));
+    P.addAssign(V.mul(U.dt));
+    // stay inside the glass
+    const d=P.sub(vec3(0,SCY,0)).toVar(),dl=length(d).toVar();
+    If(dl.greaterThan(SRAD),()=>{const n=d.div(dl).toVar();P.assign(vec3(0,SCY,0).add(n.mul(SRAD)));V.subAssign(n.mul(max(dot(V,n),0).mul(1.6)));});
+    // touch the snow: bounce while the globe is still swirling, otherwise lie down
+    const g=hAt(P).add(0.1).toVar();
+    If(P.y.lessThan(g),()=>{P.assign(vec3(P.x,g,P.z));
+      If(L.greaterThan(0.3).and(r3.greaterThan(0.15)),()=>{V.assign(vec3(V.x,abs(V.y).mul(0.5).add(1.5),V.z));}).Else(()=>{V.assign(vec3(0));air.assign(0);});});
+  }).Else(()=>{// lying flakes come back at the top now and then: a steady gentle fall
+    If(thash(S.add(3e6)).lessThan(U.spawn.mul(U.dt)),()=>{
+      const a=thash(S.add(35e5)).mul(TAU),rr=sqrt(thash(S.add(4e6))).mul(21);
+      P.assign(vec3(cos(a).mul(rr),sqrt(float(SRAD*SRAD).sub(rr.mul(rr))).add(SCY-0.6).sub(r1.mul(2)),sin(a).mul(rr)));V.assign(vec3(0,-1,0));air.assign(1);});});
+  pe.assign(vec4(P,air));ve.assign(vec4(V,0));
+});
+const stepOf={},stepNode=n=>stepOf[n]||(stepOf[n]=snowStep().compute(n));
+const snowMat=new THREE.SpriteNodeMaterial({transparent:true,depthWrite:false,toneMapped:false});
+{const pa=posB.toAttribute(),rr=thash(instanceIndex);
+  snowMat.positionNode=pa.xyz;
+  const wp=modelWorldMatrix.mul(vec4(pa.xyz,1)).xyz,near=smoothstep(1.5,7,length(wp.sub(cameraPosition)));// flakes right in front of the lens shrink away (inside view)
+  snowMat.scaleNode=rr.mul(0.15).add(0.15).mul(pa.w).mul(U.size).mul(near);// lying flakes melt into the snow (keeps roofs and presents readable)
+  snowMat.colorNode=vec3(0.82,0.87,1).add(rr.mul(0.18));
+  snowMat.opacityNode=float(1).sub(smoothstep(0.18,0.5,length(uv().sub(0.5)))).mul(0.9);}
+const snow=new THREE.Sprite(snowMat);snow.count=NF;snow.frustumCulled=false;snow.renderOrder=2;globe.add(snow);
 
 // ---------- globe hardware: under-snow, base, table, glass ----------
 const under=new THREE.Mesh(new THREE.CircleGeometry(24.2,64),new THREE.MeshStandardMaterial({color:0xe9effa,roughness:1,envMapIntensity:0.4}));
@@ -218,30 +273,26 @@ lathe([[25.9,-11.7],[26.6,-11.3],[26.6,-10.3],[25.7,-9.6],[24.7,-9.3],[24.2,-9.6
 const shell=new THREE.Mesh(new THREE.SphereGeometry(25.9,48,32),new THREE.MeshBasicMaterial({color:0x0a1430,transparent:true,opacity:0.42,side:THREE.BackSide,depthWrite:false,toneMapped:false}));
 shell.renderOrder=1;scene.add(shell);
 
-const glass=new THREE.Mesh(new THREE.SphereGeometry(26,64,48),new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
-  vertexShader:`varying vec3 vN;varying vec3 vP;
-  void main(){vN=normalMatrix*normal;vec4 p=modelViewMatrix*vec4(position,1.0);vP=p.xyz;gl_Position=projectionMatrix*p;}`,
-  fragmentShader:`varying vec3 vN;varying vec3 vP;
-  void main(){
-    vec3 N=normalize(vN),V=normalize(-vP);
-    float nv=clamp(dot(N,V),0.0,1.0);float fr=pow(1.0-nv,3.0);
-    vec3 R=reflect(-V,N);
-    vec3 L=normalize(vec3(-0.55,0.62,0.56));
-    vec3 T1=normalize(cross(vec3(0.0,1.0,0.0),L));vec3 T2=cross(L,T1);
-    float a=dot(R,T1),b=dot(R,T2),f=step(0.0,dot(R,L));
-    float win=f*smoothstep(0.24,0.2,abs(a))*smoothstep(0.3,0.26,abs(b))*smoothstep(0.012,0.03,abs(a))*smoothstep(0.012,0.03,abs(b));
-    float soft=pow(max(dot(R,L),0.0),14.0)*0.10;
-    vec3 L2=normalize(vec3(0.62,-0.38,0.5));float s2=pow(max(dot(R,L2),0.0),30.0)*0.12;
-    float sky=smoothstep(-0.3,1.0,R.y);
-    vec3 col=vec3(0.5,0.68,1.0)*fr*(0.22+0.55*sky)+vec3(0.9,0.95,1.0)*(win*0.42+soft)+vec3(1.0,0.72,0.45)*s2+vec3(0.006,0.01,0.02);
-    gl_FragColor=vec4(col,1.0);
-  }`}));
+const glassMat=new THREE.MeshBasicNodeMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false});
+glassMat.colorNode=Fn(()=>{// same maths as the old GLSL glass (view space): fresnel rim, a window reflection, two soft highlights
+  const N=normalView.normalize(),V=positionView.negate().normalize();
+  const nv=clamp(dot(N,V),0,1),fr=pow(float(1).sub(nv),3),R=reflect(V.negate(),N);
+  const L=vec3(-0.55,0.62,0.56).normalize(),T1=cross(vec3(0,1,0),L).normalize(),T2=cross(L,T1);
+  const a=abs(dot(R,T1)),b=abs(dot(R,T2)),f=step(0,dot(R,L));
+  const win=f.mul(float(1).sub(smoothstep(0.2,0.24,a))).mul(float(1).sub(smoothstep(0.26,0.3,b))).mul(smoothstep(0.012,0.03,a)).mul(smoothstep(0.012,0.03,b));
+  const soft=pow(max(dot(R,L),0),14).mul(0.1);
+  const s2=pow(max(dot(R,vec3(0.62,-0.38,0.5).normalize()),0),30).mul(0.12);
+  const sky=smoothstep(-0.3,1,R.y);
+  const col=vec3(0.5,0.68,1).mul(fr).mul(sky.mul(0.55).add(0.22)).add(vec3(0.9,0.95,1).mul(win.mul(0.42).add(soft))).add(vec3(1,0.72,0.45).mul(s2)).add(vec3(0.006,0.01,0.02));
+  return pow(col,vec3(2.2));// the old shader wrote raw values; undo the output sRGB step so it looks the same
+})();
+const glass=new THREE.Mesh(new THREE.SphereGeometry(26,64,48),glassMat);
 glass.renderOrder=10;scene.add(glass);
 
 // ---------- lights ----------
 scene.add(new THREE.HemisphereLight(0x8ea7ea,0x3a2f48,1.5));
 const moon=new THREE.DirectionalLight(0xc6d6ff,2.6);moon.position.set(-38,62,40);moon.castShadow=true;
-moon.shadow.mapSize.set(2048,2048);moon.shadow.bias=-0.0006;moon.shadow.normalBias=0.06;
+moon.shadow.mapSize.set(2048,2048);moon.shadow.bias=-0.0006;moon.shadow.radius=2.5;moon.shadow.normalBias=0.06;
 const sc=moon.shadow.camera;sc.left=-46;sc.right=46;sc.top=46;sc.bottom=-46;sc.near=10;sc.far=170;sc.updateProjectionMatrix();
 scene.add(moon);
 const pl=(x,y,z,hex,I)=>{const l=new THREE.PointLight(hex,I,60,2);l.position.set(x,y,z);globe.add(l);return l;};
@@ -300,13 +351,26 @@ function stepVillagers(T,dt){
   }}
 
 // ---------- live state: taps, shaking, zoom (all idle by default, so ?still and __draw(t) look like the original) ----------
-const live={kick:1.2,st:0,zoom:0,shake:0,lift:0,swPh:0,cab:1,cabT:1,lamp:1,lampT:1,hit:{},last:-1,inside:false};
+const live={kick:0,st:0,zoom:0,shake:0,lift:0,swPh:0,cab:1,cabT:1,lamp:1,lampT:1,hit:{},last:-1,inside:false};
 const now=()=>performance.now()/1000;
 const age=k=>now()-(live.hit[k]??-99);
 function ease(x){return 1-Math.pow(1-Math.min(1,Math.max(0,x)),3);}
 const cabI=cabL.map(l=>l.intensity),TMPC=new THREE.Color();
 window.__shake=a=>{live.shake=Math.min(1.6,live.shake+a);live.kick+=a;};
-const FY=new Float64Array(NF),FS=new Float32Array(NF);for(let i=0;i<NF;i++){FY[i]=FL[i].bot;FS[i]=0.55+0.9*FR();}
+
+// ---------- fps readout + auto quality: under 40 fps for 3 s -> half the flakes (not below 20,000) ----------
+const perf=window.__perf={fps:0,flakes:NF,backend:BACKEND,drops:[]};
+const AUTO=!Q_.has('noauto'),NOTE=BACKEND=='webgpu'?'':' · WebGPU 없음: 가벼운 모드';
+let pf={t0:-1,n:0,low:0,hold:2};
+function setFlakes(n){NF=n;snow.count=n;perf.flakes=n;}
+function perfTick(T){if(pf.t0<0){pf.t0=T;return;}pf.n++;const w=T-pf.t0;if(w<0.5)return;
+  const fps=pf.n/w;pf.n=0;pf.t0=T;perf.fps=Math.round(fps*10)/10;
+  if(w>1.5){pf.low=0;}// tab was hidden / stalled: don't judge
+  else if(pf.hold>0)pf.hold-=w;// shader compile / just changed: wait
+  else if(AUTO&&fps<40&&NF>NMIN){pf.low+=w;if(pf.low>=3){const n=Math.max(NMIN,Math.round(NF/2));perf.drops.push({from:NF,to:n,fps:perf.fps});setFlakes(n);pf.low=0;pf.hold=1;}}
+  else pf.low=0;
+  perfEl.textContent=`${Math.round(fps)} fps · 눈 ${NF.toLocaleString('en-US')}개 · ${BACKEND}${NOTE}`;}
+window.__setFlakes=n=>setFlakes(Math.max(1,Math.min(NMAX,n|0)));
 
 // ---------- frame ----------
 const P=new THREE.Vector3(),S=new THREE.Vector3(),Q=new THREE.Quaternion(),E=new THREE.Euler();
@@ -329,18 +393,9 @@ window.__draw=function(t){
 
   const L=live.lift;
   live.st+=dt;const st=live.st;
-  if(live.kick>0){const k=Math.min(1,live.kick*1.8);for(let i=0;i<NF;i++){const f=FL[i];if(FR()<k)FY[i]=Math.max(FY[i],f.bot+(f.top-f.bot)*(0.12+0.73*FR()));}live.kick=0;}
-  for(let i=0;i<NF;i++){const f=FL[i],h=f.top-f.bot;
-    if(FY[i]>f.bot){FY[i]=Math.max(f.bot,FY[i]-h/(9/FS[i])*dt*(1-0.75*L));}
-    else if(i<NF*0.35&&FR()<dt*0.12){FY[i]=f.bot+h*(0.88+0.12*FR());}
-    const air=Math.min(1,(FY[i]-f.bot)/1.5),y=FY[i];
-    let x=f.x+Math.sin(st*0.9*f.m+f.p1)*f.sw*air,z=f.z+Math.cos(st*0.8*f.m2+f.p2)*f.sw*air;
-    if(L>0.002&&air>0){const a=live.swPh*(0.4+f.sw*1.3)*air,c=Math.cos(a),sn=Math.sin(a),x0=x;x=x0*c-z*sn;z=x0*sn+z*c;}
-    P.set(x,y,z);
-    E.set(f.r1+air*1.2*Math.sin(st*0.8+f.p1*(1+f.k2)),f.r2+air*1.2*Math.cos(st*0.6*f.k2+f.p2),0);Q.setFromEuler(E);
-    S.setScalar(f.s*(0.7+0.3*air));
-    M4.compose(P,Q,S);snow.setMatrixAt(i,M4);}
-  snow.instanceMatrix.needsUpdate=true;
+  U.dt.value=dt;U.size.value=1-0.5*zs;U.t.value=st;U.lift.value=L;U.seed.value=(Math.random()*1e6)|0;
+  U.kick.value=live.kick>0?Math.min(1,live.kick*1.8):0;U.pow.value=Math.min(1.6,Math.max(0.35,live.shake));live.kick=0;
+  renderer.compute(stepNode(NF));
 
   // tree tap: a 3.5 s light show running up the tree
   const ta=age('tree'),show=ta<3.5?Math.min(1,ta/0.15)*(1-ta/3.5):0;
@@ -393,7 +448,7 @@ window.__draw=function(t){
       b.style.left=((P.x+1)/2*innerWidth)+'px';b.style.top=((1-P.y)/2*innerHeight-4-a*10)+'px';b.style.opacity=a<1.4?1:(1.8-a)/0.4;}
     else if(b)b.style.opacity=0;}
   renderer.render(scene,cam);
-  ctx.drawImage(off,0,0,W,H);
+  perfTick(T);
 };
 
 // ---------- tap: villagers by ray, everything else by marching the voxel grid ----------
