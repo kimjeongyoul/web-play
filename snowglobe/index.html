@@ -9,10 +9,13 @@ canvas{position:fixed;inset:0;display:block;width:100vw;height:100vh;height:100d
 canvas.grab{cursor:grabbing}
 #hint{position:fixed;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));justify-content:center;pointer-events:none;display:flex;gap:22px;opacity:.75;transition:opacity 1.2s}
 #hint.off{opacity:0}
+#home{position:fixed;top:calc(14px + env(safe-area-inset-top));right:14px;width:46px;height:46px;border-radius:50%;border:1px solid rgba(159,176,208,.35);background:rgba(5,7,13,.55);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+#home svg{width:24px;height:24px;stroke:var(--hint);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #hint span{color:var(--hint);font:500 15px/1.4 system-ui,sans-serif;background:rgba(5,7,13,.55);padding:6px 14px;border-radius:999px;text-align:center}
 </style>
 <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
 </head><body><canvas id="c" width="800" height="800"></canvas>
+<button id="home" aria-label="처음 구도로" title="처음 구도로"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
 <div id="hint" aria-hidden="true"><span>끌어서 돌리기 · 흔들면 눈보라 · 확대하면 안으로</span></div>
 <script type="module">
 import * as THREE from 'three';
@@ -293,12 +296,13 @@ function stepVillagers(T,dt){
   }}
 
 // ---------- live state: taps, shaking, zoom (all idle by default, so ?still and __draw(t) look like the original) ----------
-const live={zoom:0,shake:0,lift:0,swPh:0,cab:1,cabT:1,lamp:1,lampT:1,hit:{},last:-1,inside:false};
+const live={kick:1.2,st:0,zoom:0,shake:0,lift:0,swPh:0,cab:1,cabT:1,lamp:1,lampT:1,hit:{},last:-1,inside:false};
 const now=()=>performance.now()/1000;
 const age=k=>now()-(live.hit[k]??-99);
 function ease(x){return 1-Math.pow(1-Math.min(1,Math.max(0,x)),3);}
 const cabI=cabL.map(l=>l.intensity),TMPC=new THREE.Color();
-window.__shake=a=>{live.shake=Math.min(1.6,live.shake+a);};
+window.__shake=a=>{live.shake=Math.min(1.6,live.shake+a);live.kick+=a;};
+const FY=new Float32Array(NF),FS=new Float32Array(NF);for(let i=0;i<NF;i++){FY[i]=FL[i].bot;FS[i]=0.55+0.9*FR();}
 
 // ---------- frame ----------
 const P=new THREE.Vector3(),S=new THREE.Vector3(),Q=new THREE.Quaternion(),E=new THREE.Euler();
@@ -320,13 +324,16 @@ window.__draw=function(t){
   live.inside=cam.position.length()<25.4;glass.visible=!live.inside;
 
   const L=live.lift;
-  for(let i=0;i<NF;i++){const f=FL[i],p=(f.f0+f.n*ph)%1;
-    let x=f.x+Math.sin(TAU*f.m*ph+f.p1)*f.sw,y=f.top-p*(f.top-f.bot),z=f.z+Math.cos(TAU*f.m2*ph+f.p2)*f.sw;
-    if(L>0.002){const a=live.swPh*(0.4+f.sw*1.3),c=Math.cos(a),s=Math.sin(a),x0=x;x=x0*c-z*s;z=x0*s+z*c;
-      y=Math.min(f.top,y+(f.top-y)*L*(0.25+0.7*f.f0)+Math.sin(live.swPh*1.7+f.p1)*L*1.5);}
+  live.st+=dt;const st=live.st;
+  if(live.kick>0){const k=Math.min(1,live.kick);for(let i=0;i<NF;i++){const f=FL[i];if(FR()<k)FY[i]=Math.max(FY[i],f.bot+(f.top-f.bot)*(0.12+0.73*FR()));}live.kick=0;}
+  for(let i=0;i<NF;i++){const f=FL[i],h=f.top-f.bot;
+    if(FY[i]>f.bot){FY[i]=Math.max(f.bot,FY[i]-h/(9/FS[i])*dt*(1-0.75*L));}
+    const air=Math.min(1,(FY[i]-f.bot)/1.5),y=FY[i];
+    let x=f.x+Math.sin(st*0.9*f.m+f.p1)*f.sw*air,z=f.z+Math.cos(st*0.8*f.m2+f.p2)*f.sw*air;
+    if(L>0.002&&air>0){const a=live.swPh*(0.4+f.sw*1.3)*air,c=Math.cos(a),sn=Math.sin(a),x0=x;x=x0*c-z*sn;z=x0*sn+z*c;}
     P.set(x,y,z);
-    E.set(f.r1+TAU*f.k1*ph,f.r2+TAU*f.k2*ph,0);Q.setFromEuler(E);
-    S.setScalar(f.s*Math.max(Math.min(1,p*14)*Math.min(1,(1-p)*14),L));
+    E.set(f.r1+st*f.k1*air,f.r2+st*f.k2*air,0);Q.setFromEuler(E);
+    S.setScalar(f.s*(0.7+0.3*air));
     M4.compose(P,Q,S);snow.setMatrixAt(i,M4);}
   snow.instanceMatrix.needsUpdate=true;
 
@@ -405,17 +412,18 @@ if(location.search.includes('still')){window.__draw(5);}
 else{
   // ---------- controls: drag = rotate (with inertia), fast back-and-forth = shake, tap = poke, wheel / pinch = zoom ----------
   const cv=view,hint=document.getElementById('hint');
-  let t=0,vel=0,zoomT=0.1,lastF=performance.now(),drag=null,pinch=null,asked=false;
+  let back=false,t=5,vel=0,zoomT=0.1,lastF=performance.now(),drag=null,pinch=null,asked=false;
   let lastWhat='';const ptr=new Map(),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const used=()=>{if(hint)hint.classList.add('off');};
   const loop=(n)=>{const dt=Math.min(0.1,Math.max(0,(n-lastF)/1000));lastF=n;
     live.zoom+=(zoomT-live.zoom)*Math.min(1,dt*6);
-    if(!drag){t+=dt*(1-0.7*live.zoom)+vel*dt;vel*=Math.exp(-dt/0.7);}
+    if(back&&!drag){const g=Math.round((t-5)/10)*10+5;t+=(g-t)*Math.min(1,dt*5);if(Math.abs(g-t)<0.02&&Math.abs(live.zoom-zoomT)<0.01)back=false;}
+    else if(!drag){t+=vel*dt;vel*=Math.exp(-dt/0.7);}
     window.__draw(((t%10)+10)%10);requestAnimationFrame(loop);};
   requestAnimationFrame(loop);
   const rev={x:{d:0,at:0,list:[]},y:{d:0,at:0,list:[]}};
   function shakeAxis(k,pos,step,T){const r=rev[k],d=Math.sign(step);if(!d)return;
-    if(r.d&&d!==r.d&&Math.abs(pos-r.at)>cv.clientWidth*0.05){r.list.push(T);r.list=r.list.filter(x=>T-x<0.7);if(r.list.length>=2)window.__shake(0.4);}
+    if(r.d&&d!==r.d&&Math.abs(pos-r.at)>cv.clientWidth*0.03){r.list.push(T);r.list=r.list.filter(x=>T-x<0.8);if(r.list.length>=1)window.__shake(0.45);}
     if(d!==r.d){r.d=d;r.at=pos;}}
   cv.addEventListener('pointerdown',e=>{used();try{cv.setPointerCapture(e.pointerId);}catch(_){}ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(!asked){asked=true;try{if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function')DeviceMotionEvent.requestPermission().catch(()=>{});}catch(_){}}
@@ -436,15 +444,16 @@ else{
       if(what&&navigator.vibrate)try{navigator.vibrate(12);}catch(_){}}
     else if(n-drag.lt>90)vel=0;
     vel=clamp(vel,-12,12);drag=null;};
+  document.getElementById('home').addEventListener('click',()=>{back=true;vel=0;zoomT=0.1;used();});
+  cv.addEventListener('pointerdown',()=>{back=false;});
   cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
   cv.addEventListener('wheel',e=>{e.preventDefault();used();zoomT=clamp(zoomT-e.deltaY*0.0012,0,1);},{passive:false});
   addEventListener('keydown',e=>{if(e.key=='+'||e.key=='=')zoomT=clamp(zoomT+0.2,0,1);if(e.key=='-')zoomT=clamp(zoomT-0.2,0,1);});
   // phone shake (only if the browser gives motion events)
   let lastA=null,lastS=0;
-  addEventListener('devicemotion',e=>{const a=e.accelerationIncludingGravity;if(!a||a.x==null)return;
-    if(lastA){const j=Math.abs(a.x-lastA.x)+Math.abs(a.y-lastA.y)+Math.abs(a.z-lastA.z),T=performance.now();
-      if(j>16&&T-lastS>120){lastS=T;window.__shake(Math.min(0.6,j/50));used();}}
-    lastA={x:a.x,y:a.y,z:a.z};});
+  addEventListener('devicemotion',e=>{const g=e.acceleration,a=e.accelerationIncludingGravity,T=performance.now();let j=0;
+    if(g&&g.x!=null)j=Math.hypot(g.x,g.y,g.z);else if(a&&a.x!=null)j=Math.abs(Math.hypot(a.x,a.y,a.z)-9.8);else return;
+    if(j>9&&T-lastS>150){lastS=T;window.__shake(Math.min(0.7,j/25));used();}});
   window.__ui={zoom:z=>{zoomT=clamp(z,0,1);live.zoom=zoomT;},state:()=>({zoom:live.zoom,inside:live.inside,lift:live.lift,vis:vill.filter(v=>v.g.visible).length,last:lastWhat,cab:live.cabT,lamp:live.lampT}),
     // screen point (client px) of a thing, for automated checks
     where:k=>{const p={man:[SX,6,SZ],cab:[CX-4,3,CZ+5],tree:[TX,14,TZ],lamp:[LX,9.5,LZ]}[k];const V=new THREE.Vector3();
