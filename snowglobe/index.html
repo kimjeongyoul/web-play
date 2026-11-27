@@ -10,6 +10,8 @@ canvas{position:fixed;inset:0;display:block;width:100vw;height:100vh;height:100d
 canvas.grab{cursor:grabbing}
 #hint{position:fixed;left:16px;right:16px;overflow:hidden;bottom:calc(14px + env(safe-area-inset-bottom));justify-content:center;pointer-events:none;display:flex;gap:22px;opacity:.75;transition:opacity 1.2s}
 #hint.off{opacity:0}
+.say{position:fixed;left:0;top:0;pointer-events:none;font:700 15px/1.2 system-ui,sans-serif;color:#1b1d24;background:#fff;padding:6px 11px;border-radius:14px;white-space:nowrap;transform:translate(-50%,-100%);opacity:0;transition:opacity .15s;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.say::after{content:"";position:absolute;left:50%;bottom:-6px;margin-left:-6px;border:6px solid transparent;border-bottom:0;border-top-color:#fff}
 #home{position:fixed;top:calc(14px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));width:46px;height:46px;border-radius:50%;border:1px solid rgba(159,176,208,.35);background:rgba(5,7,13,.55);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 #home svg{width:24px;height:24px;stroke:var(--hint);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #hint span{max-width:100%;box-sizing:border-box;word-break:keep-all;color:var(--hint);font:500 15px/1.4 system-ui,sans-serif;background:rgba(5,7,13,.55);padding:6px 14px;border-radius:999px;text-align:center}
@@ -259,7 +261,7 @@ const PATH=[[7,-2.2],[7,3],[11,6.5],[12.5,11],[9,14],[6,10],[7,3],[7,-2.2]];
 const SEG=[];let PLEN=0;for(let i=1;i<PATH.length;i++){const l=Math.hypot(PATH[i][0]-PATH[i-1][0],PATH[i][1]-PATH[i-1][1]);SEG.push(l);PLEN+=l;}
 function pathAt(s){for(let i=0;i<SEG.length;i++){if(s<=SEG[i]||i==SEG.length-1){const k=Math.min(1,s/SEG[i]),a=PATH[i],b=PATH[i+1];return[a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k,b[0]-a[0],b[1]-a[1]];}s-=SEG[i];}}
 function groundAt(x,z){const X=Math.round(x),Z=Math.round(z);let y=0;while(y<4&&has(X,y,Z))y++;return y;}
-const VR=rng(7),vill=[];
+const VR=rng(7),vill=[],LINES=['아야!','아야 아야!','왜 눌러요!','간지러워~','안녕!','헤헤','으악!','눈 온다!','나 바빠요','뭐야 뭐야'];
 for(let i=0;i<6;i++){const g=new THREE.Group(),body=new THREE.Group();g.add(body);
   const add=(geo,mat,x,y,z,sx=1,sy=1,sz=1)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=true;m.userData.vi=i;body.add(m);return m;};
   const coat=COATS[i%COATS.length];
@@ -376,6 +378,12 @@ window.__draw=function(t){
     if(a<0.8){o.position.y=Math.sin(Math.PI*a/0.8)*3;o.rotation.y=ease(a/0.8)*Math.PI*0.5*(i&1?1:-1);}else o.position.y=0;}
 
   stepVillagers(T,dt);
+  for(const v of vill){const a=T-v.hit;let b=v.say;
+    if(a<1.6&&v.g.visible){if(!b){b=v.say=document.createElement('div');b.className='say';document.body.appendChild(b);}
+      if(v.sayAt!==v.hit){v.sayAt=v.hit;let w;do{w=LINES[(Math.random()*LINES.length)|0];}while(w===v.lastLine&&LINES.length>1);v.lastLine=w;b.textContent=w;}
+      v.g.getWorldPosition(P);P.y+=4.6*v.g.scale.y;P.project(cam);
+      b.style.left=((P.x+1)/2*innerWidth)+'px';b.style.top=((1-P.y)/2*innerHeight-4-a*10)+'px';b.style.opacity=a<1.2?1:(1.6-a)/0.4;}
+    else if(b)b.style.opacity=0;}
   renderer.render(scene,cam);
   ctx.drawImage(off,0,0,W,H);
 };
