@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>스노우볼</title>
 <style>
 :root{--bg:#05070d;--hint:#9fb0d0;color-scheme:dark}
-html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;overscroll-behavior:none}
+html,body{margin:0;height:100%;width:100%;background:var(--bg);overflow:hidden;overscroll-behavior:none;touch-action:none}
 body{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 canvas{position:fixed;inset:0;display:block;width:100vw;height:100vh;height:100dvh;touch-action:none;cursor:grab}
 canvas.grab{cursor:grabbing}
@@ -332,7 +332,7 @@ window.__draw=function(t){
     let x=f.x+Math.sin(st*0.9*f.m+f.p1)*f.sw*air,z=f.z+Math.cos(st*0.8*f.m2+f.p2)*f.sw*air;
     if(L>0.002&&air>0){const a=live.swPh*(0.4+f.sw*1.3)*air,c=Math.cos(a),sn=Math.sin(a),x0=x;x=x0*c-z*sn;z=x0*sn+z*c;}
     P.set(x,y,z);
-    E.set(f.r1+st*f.k1*air,f.r2+st*f.k2*air,0);Q.setFromEuler(E);
+    E.set(f.r1+air*1.2*Math.sin(st*0.8+f.p1*(1+f.k2)),f.r2+air*1.2*Math.cos(st*0.6*f.k2+f.p2),0);Q.setFromEuler(E);
     S.setScalar(f.s*(0.7+0.3*air));
     M4.compose(P,Q,S);snow.setMatrixAt(i,M4);}
   snow.instanceMatrix.needsUpdate=true;
@@ -426,7 +426,6 @@ else{
     if(r.d&&d!==r.d&&Math.abs(pos-r.at)>cv.clientWidth*0.03){r.list.push(T);r.list=r.list.filter(x=>T-x<0.8);if(r.list.length>=1)window.__shake(0.45);}
     if(d!==r.d){r.d=d;r.at=pos;}}
   cv.addEventListener('pointerdown',e=>{used();try{cv.setPointerCapture(e.pointerId);}catch(_){}ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(!asked){asked=true;try{if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function')DeviceMotionEvent.requestPermission().catch(()=>{});}catch(_){}}
     if(ptr.size==2){const [a,b]=[...ptr.values()];pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1,z:zoomT};drag=null;return;}
     const n=performance.now();drag={x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY,tm:n,lt:n,moved:0};vel=0;cv.classList.add('grab');});
   cv.addEventListener('pointermove',e=>{if(!ptr.has(e.pointerId))return;ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -446,6 +445,9 @@ else{
     vel=clamp(vel,-12,12);drag=null;};
   document.getElementById('home').addEventListener('click',()=>{back=true;vel=0;zoomT=0.1;used();});
   cv.addEventListener('pointerdown',()=>{back=false;});
+  const askMotion=()=>{if(asked)return;try{if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){DeviceMotionEvent.requestPermission().then(r=>{asked=(r==='granted');}).catch(()=>{});}else asked=true;}catch(_){asked=true;}};
+  addEventListener('touchend',askMotion);addEventListener('click',askMotion);
+  ['gesturestart','gesturechange','dblclick'].forEach(n=>document.addEventListener(n,e=>e.preventDefault(),{passive:false}));
   cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
   cv.addEventListener('wheel',e=>{e.preventDefault();used();zoomT=clamp(zoomT-e.deltaY*0.0012,0,1);},{passive:false});
   addEventListener('keydown',e=>{if(e.key=='+'||e.key=='=')zoomT=clamp(zoomT+0.2,0,1);if(e.key=='-')zoomT=clamp(zoomT-0.2,0,1);});
@@ -453,7 +455,7 @@ else{
   let lastA=null,lastS=0;
   addEventListener('devicemotion',e=>{const g=e.acceleration,a=e.accelerationIncludingGravity,T=performance.now();let j=0;
     if(g&&g.x!=null)j=Math.hypot(g.x,g.y,g.z);else if(a&&a.x!=null)j=Math.abs(Math.hypot(a.x,a.y,a.z)-9.8);else return;
-    if(j>9&&T-lastS>150){lastS=T;window.__shake(Math.min(0.7,j/25));used();}});
+    if(j>7&&T-lastS>150){lastS=T;window.__shake(Math.min(0.7,j/25));used();}});
   window.__ui={zoom:z=>{zoomT=clamp(z,0,1);live.zoom=zoomT;},state:()=>({zoom:live.zoom,inside:live.inside,lift:live.lift,vis:vill.filter(v=>v.g.visible).length,last:lastWhat,cab:live.cabT,lamp:live.lampT}),
     // screen point (client px) of a thing, for automated checks
     where:k=>{const p={man:[SX,6,SZ],cab:[CX-4,3,CZ+5],tree:[TX,14,TZ],lamp:[LX,9.5,LZ]}[k];const V=new THREE.Vector3();
