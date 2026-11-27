@@ -209,10 +209,10 @@ const hTex=new THREE.DataTexture(hData,49,49,THREE.RGBAFormat,THREE.UnsignedByte
 const posB=instancedArray(NB,'vec4'),velB=instancedArray(NB,'vec4');
 {const PA=posB.value.array,FR=rng(99);// start like the old globe: most flakes spread through the air, the rest on the snow
   for(let i=0;i<NB;i++){let x,y,z;
-    if(FR()<0.04){do{x=(FR()*2-1)*SRAD;y=SCY+(FR()*2-1)*SRAD;z=(FR()*2-1)*SRAD;}while(x*x+(y-SCY)**2+z*z>SRAD*SRAD||y<hfAt(x,z)+0.5);PA[i*4+3]=1;}
+    if(FR()<0.1){do{x=(FR()*2-1)*SRAD;y=SCY+(FR()*2-1)*SRAD;z=(FR()*2-1)*SRAD;}while(x*x+(y-SCY)**2+z*z>SRAD*SRAD||y<hfAt(x,z)+0.5);PA[i*4+3]=1;}
     else{const an=FR()*TAU,rr=Math.sqrt(FR())*22.4;x=Math.cos(an)*rr;z=Math.sin(an)*rr;y=hfAt(x,z)+0.1;PA[i*4+3]=0;}
     PA[i*4]=x;PA[i*4+1]=y;PA[i*4+2]=z;}}
-const U={size:uniform(1),dt:uniform(0),t:uniform(0),lift:uniform(0),kick:uniform(0),pow:uniform(0),seed:uniform(0),spawn:uniform(0.004)};
+const U={size:uniform(1),dt:uniform(0),t:uniform(0),lift:uniform(0),kick:uniform(0),pow:uniform(0),seed:uniform(0),spawn:uniform(0.01)};
 const hAt=P=>textureLoad(hTex,ivec2(clamp(round(P.x).add(24),0,48).toInt(),clamp(round(P.z).add(24),0,48).toInt())).r.mul(255/8).sub(1);
 const snowStep=Fn(()=>{
   const i=float(instanceIndex),pe=posB.element(instanceIndex),ve=velB.element(instanceIndex);
