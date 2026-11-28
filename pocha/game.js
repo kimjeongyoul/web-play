@@ -5,7 +5,7 @@
 // "next city: Tokyo" ending. Helpers (till, runner, cook) take the loop over one by one, so by about 4 minutes money
 // comes in while Baekho stands still. Order: gamedev-kit/history/NEXT_GAMES.md '백호 포장마차 2차 시제품'.
 import * as THREE from './vendor/three.module.min.js'
-import { STR, CITY, CITY_ORDER, LANGUAGES } from './strings.js?v=6661a4f'
+import { STR, CITY, CITY_ORDER, LANGUAGES } from './strings.js'
 let cityId = 'seoul', city = CITY.seoul
 
 const Q = new URLSearchParams(location.search)
@@ -35,7 +35,7 @@ let STEPS = [
   { what: 'staff', role: 'cook', cost: 200, x: 0, z: 4.6 },
   { what: 'arch', cost: 260, x: 0, z: -8.4 },
 ]
-const spawnGap = () => (game.rush ? 0.75 : 4.6 / Math.pow(openCount(), 0.8) * (TWIST[cityId].gapMul || 1)) * rnd(0.75, 1.25)
+const spawnGap = () => (game.rush ? 0.75 : 4.6 / Math.pow(openCount(), 0.8) * (TWIST[cityId].gapMul || 1) * Math.pow(0.87, perk('line')) * (game.boostT > 0 ? 0.5 : 1)) * rnd(0.75, 1.25)
 
 // ---------------------------------------------------------------- renderer, scene
 const canvas = $('c')
@@ -526,8 +526,11 @@ function setStack(group, items, max = 20) {
 const flyers = []
 const coinGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.04, 12); coinGeo.rotateX(Math.PI / 2)
 const coinMat = new THREE.MeshLambertMaterial({ color: 0xffd23f, emissive: 0x6a4a00 })
+const billGeo = new THREE.BoxGeometry(0.44, 0.045, 0.26), billMat = new THREE.MeshLambertMaterial({ color: 0x4caf50, emissive: 0x0d3a10 }), bandMat = new THREE.MeshLambertMaterial({ color: 0xfff3c0 })
+const bandGeo = new THREE.BoxGeometry(0.1, 0.05, 0.27)
+function bill(parent) { const m = mesh(billGeo, billMat, 0, 0, 0, parent); mesh(bandGeo, bandMat, 0, 0, 0, m); return m }
 function fly(kind, from, to, onLand) {
-  const m = kind === 'coin' ? mesh(coinGeo, coinMat) : ITEM[kind](); if (kind !== 'coin') scene.add(m)
+  const m = kind === 'coin' ? mesh(coinGeo, coinMat) : kind === 'bill' ? bill(scene) : ITEM[kind](); if (kind !== 'coin' && kind !== 'bill') scene.add(m)
   m.position.copy(from); flyers.push({ m, from: from.clone(), to, t: 0, onLand })
 }
 function updateFlyers(dt) {
@@ -794,18 +797,21 @@ const mayTalk = () => { if (talkClock > 0) return false; talkClock = rnd(2.2, 3.
 const ringGeo = new THREE.RingGeometry(0.42, 0.5, 24)
 function removeWalker(w) { scene.remove(w.rig.g); for (const k of ['ring', 'bubble', 'talk']) if (w[k]) { scene.remove(w[k]); w[k].material.dispose() } }
 
-function spawnCustomer() {
-  const open = stalls.filter((s) => s.open && queues[s.id].length < MAX_LINE)
-  if (!open.length) return
+function spawnCustomer(kind = '') {
+  const open = stalls.filter((s) => s.open && (kind || queues[s.id].length < MAX_LINE + perk('line')))
+  if (!open.length) return null
   open.sort((a, b) => queues[a.id].length - queues[b.id].length)
   const s = Math.random() < 0.65 ? open[0] : pick(open)
   const side = s.x < 0 ? 0 : 1
-  const c = { rig: makePerson(), x: ENTER[side].x + rnd(-0.5, 0.5), z: ENTER[side].z, face: Math.PI, speed: rnd(2.6, 3.2), want: s.id, n: game.rush ? pick([2, 3]) : pick([1, 1, 2]), got: 0, state: 'toQueue', patience: PATIENCE, takeT: 0, payT: 0 }
+  const c = { rig: makePerson(), x: ENTER[side].x + rnd(-0.5, 0.5), z: ENTER[side].z, face: Math.PI, speed: rnd(2.6, 3.2), want: s.id, n: game.rush ? pick([2, 3]) : pick([1, 1, 2]), got: 0, state: 'toQueue', patience: PATIENCE, takeT: 0, payT: 0, kind }
+  c.pmax = c.patience = PATIENCE * (1 + 0.25 * perk('smile')) * (kind === 'star' ? 1.6 : 1)
   c.ring = mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x6cff8a, transparent: true, opacity: 0.9 })); c.ring.rotation.x = -Math.PI / 2
+  if (kind) dressSpecial(c)
   queues[s.id].push(c); customers.push(c)
   const sl = qSlot(s.id, queues[s.id].length - 1); walkTo(c, sl.x, sl.z)
   setBubble(c, 'want' + s.id)
   if (game.rush && mayTalk()) talk(c, 'rush')
+  return c
 }
 function reslot(q, slotOf) { q.forEach((c, i) => { const sl = slotOf(i); if (Math.hypot(c.tx - sl.x, c.tz - sl.z) > 0.01) walkTo(c, sl.x, sl.z, c.inLine) }) }
 function leave(c, mood) {
@@ -827,7 +833,7 @@ function updateCustomers(dt) {
       const q = queues[c.want], idx = q.indexOf(c)
       if (arrived) { c.state = 'queue'; c.inLine = true }
       c.patience -= dt * (game.rush ? 0.8 : 1)
-      if (c.patience < PATIENCE * 0.4 && !c.grumbled && mayTalk()) { c.grumbled = true; talk(c, 'wait') }
+      if (c.patience < c.pmax * 0.4 && !c.grumbled && mayTalk()) { c.grumbled = true; talk(c, 'wait') }
       const s = stalls[c.want]
       if (idx === 0 && arrived && s.shown > 0) {
         c.takeT += dt
@@ -835,10 +841,10 @@ function updateCustomers(dt) {
           c.takeT = 0; s.shown--; c.got++; c.patience = Math.max(c.patience, 8)
           const from = s.dispShow.children[s.dispShow.children.length - 1]?.getWorldPosition(new THREE.Vector3()) || new THREE.Vector3(s.disp.x, 1, s.disp.z)
           fly(`food${c.want}`, from, new THREE.Vector3(c.x, 1.3, c.z)); sfx('pop')
-          if (c.got >= c.n) { q.shift(); reslot(q, (k) => qSlot(c.want, k)); c.state = 'toCash'; c.inLine = false; cashQ.push(c); const sl = cSlot(cashQ.length - 1); walkTo(c, sl.x, sl.z); setBubble(c, 'pay'); c.patience = PATIENCE + 10 }
+          if (c.got >= c.n) { q.shift(); reslot(q, (k) => qSlot(c.want, k)); c.state = 'toCash'; c.inLine = false; cashQ.push(c); const sl = cSlot(cashQ.length - 1); walkTo(c, sl.x, sl.z); setBubble(c, 'pay'); c.patience = c.pmax + 10 }
         }
       }
-      if (c.patience <= 0 && c.state !== 'toCash') { q.splice(q.indexOf(c), 1); reslot(q, (k) => qSlot(c.want, k)); game.lost++; leave(c, 'angry'); sfx('angry') }
+      if (c.patience <= 0 && c.state !== 'toCash') { q.splice(q.indexOf(c), 1); reslot(q, (k) => qSlot(c.want, k)); game.lost++; leave(c, 'angry'); sfx('angry'); specialDone(c, false) }
     } else if (c.state === 'toCash' || c.state === 'cash') {
       const idx = cashQ.indexOf(c)
       if (arrived) { c.state = 'cash'; c.inLine = true }
@@ -846,19 +852,19 @@ function updateCustomers(dt) {
       if (idx === 0 && arrived && tillManned()) {
         c.payT += dt
         if (c.payT > 0.4) {
-          const pay = c.n * stalls[c.want].price
+          const pay = Math.round(c.n * stalls[c.want].price * Math.pow(1.2, perk('tip')) * (c.kind === 'star' ? 2 : c.kind === 'critic' ? 5 : 1))
           cashQ.shift(); reslot(cashQ, cSlot)
           for (let k = 0; k < Math.min(pay, 6); k++) setTimeout(() => fly('coin', new THREE.Vector3(c.x, 1.4, c.z), () => new THREE.Vector3(player.x, 1.6, player.z)), k * 50)
-          game.money += pay; game.earned += pay; game.served++; sfx('coin'); leave(c, 'happy')
+          game.money += pay; game.earned += pay; game.served++; sfx('coin'); leave(c, 'happy'); specialDone(c, true)
         }
       }
-      if (c.patience <= 0) { cashQ.splice(cashQ.indexOf(c), 1); reslot(cashQ, cSlot); game.lost++; leave(c, 'angry'); sfx('angry') }
+      if (c.patience <= 0) { cashQ.splice(cashQ.indexOf(c), 1); reslot(cashQ, cSlot); game.lost++; leave(c, 'angry'); sfx('angry'); specialDone(c, false) }
     } else if (c.state === 'leave') {
       c.leaveT += dt; if (c.leaveT > 1.6 && c.bubble) c.bubble.visible = false
       if (arrived) { removeWalker(c); customers.splice(i, 1); continue }
     }
     if (c.state !== 'leave') {
-      const p = clamp(c.patience / PATIENCE, 0, 1)
+      const p = clamp(c.patience / c.pmax, 0, 1)
       c.ring.material.color.setHex(p > 0.5 ? 0x6cff8a : p > 0.25 ? 0xffd23f : 0xff4d4d)
       c.ring.scale.setScalar(0.6 + 0.4 * p)
     }
@@ -886,7 +892,7 @@ function work(w, p) {
 }
 
 // helpers: till (stands at the till), runner (grill -> display, any stall), cook (crate -> grill, any stall)
-function hire(role, x, z) { helpers.push({ role, rig: makeTiger(role), x, z, face: Math.PI, items: [], cap: role === 'cash' ? 0 : 4, speed: 4.4, path: [], goal: null, workT: 0, idleT: 0, thinkT: 0 }) }
+function hire(role, x, z) { helpers.push({ role, rig: makeTiger(role), x, z, face: Math.PI, items: [], cap: role === 'cash' ? 0 : 4, speed: 4.4, path: [], goal: null, workT: 0, idleT: 0, thinkT: 0 }); applyPerks() }
 function helperGoal(h) {
   const open = stalls.filter((s) => s.open), top = h.items[h.items.length - 1]
   if (h.role === 'cash') return cashPad
@@ -966,13 +972,23 @@ function movePlayer(dt) {
     for (const p of pads) {
       if (!p.g.visible || !atPad(player, p)) continue
       if (p.kind === 'buy') {
-        if (buy.step && game.money > 0) { const pay = Math.min(game.money, buy.left, Math.max(1, Math.ceil(buy.step.cost / 14))); game.money -= pay; buy.left -= pay; drawBuy(); sfx('coin', 0.25); if (buy.left <= 0) { unlock(buy.step); break } }
+        if (buy.step && game.money > 0) { const pay = Math.min(game.money, buy.left, Math.max(1, Math.ceil(buy.step.cost / 14))); game.money -= pay; buy.left -= pay; drawBuy(); sfx('coin', 0.25); if ((player.billN = (player.billN || 0) + 1) % 2) fly('bill', new THREE.Vector3(player.x, 1.4, player.z), new THREE.Vector3(buy.x, 0.1, buy.z)); if (buy.left <= 0) { unlock(buy.step); break } }
         continue
       }
       const did = work(player, p); if (did) sfx(did, 0.5)
     }
   }
   setStack(rig.stack, player.items)
+  drawCash(rig)
+}
+// the money Baekho has, as a stack of bills on his back: 8 bills = enough for the next thing to buy (one bill at least while he has any)
+function drawCash(rig) {
+  if (!rig.cash) { rig.cash = new THREE.Group(); rig.cash.position.set(0, 1.02 * rig.s, -0.4 * rig.s); rig.g.add(rig.cash) }
+  const need = buy.step ? Math.max(1, buy.left) : 100, n = game.money <= 0 ? 0 : Math.min(12, Math.max(1, Math.ceil(game.money / need * 8)))
+  if (rig.cash.userData.n === n) return
+  rig.cash.userData.n = n
+  while (rig.cash.children.length < n) { const b = bill(rig.cash), i = rig.cash.children.length - 1; b.position.y = i * 0.055; b.rotation.y = ((i * 7) % 5 - 2) * 0.06 }
+  while (rig.cash.children.length > n) rig.cash.remove(rig.cash.children[rig.cash.children.length - 1])
 }
 // batter on a griddle: a short sear, heard only near Baekho (max 0.18, under half the old loop's 0.38), at most every 0.4 s
 let searT = 0
@@ -983,6 +999,8 @@ function sear(at) {
 }
 function unlock(st) {
   sfx('unlock'); buzz(40); game.lit++; game.unlocks.push(Math.round(game.time))
+  if (st.what !== 'arch') queuePick(st.what === 'stall' ? 1.8 : 0.5)
+  platform.track('progression_completed', { step_id: st.what === 'stall' ? 'stall_' + st.id : st.what === 'staff' ? st.role : 'arch', step_index: game.lit, city: cityId })  // a lamp lit: funnel + session length between pings
   if (st.what === 'stall') { const s = stalls[st.id]; s.open = true; setOpenLook(s); buildGrid(); burst(s.disp.x, s.disp.z); game.tasted.push(s.id); tasteCard(s.id) }
   else if (st.what === 'staff') { hire(st.role, st.x, st.z); bannerShow(`${t(roleKey[st.role])}!`, 1.6); burst(st.x, st.z) }
   else { arch.visible = true; burst(0, -7.6, 60, 4); hudStreet(); clearCity(); return }
@@ -997,7 +1015,8 @@ function guideTarget() {
   if (top?.startsWith('raw')) return stalls[+top.slice(3)].pads.grill
   if (top?.startsWith('food')) return stalls[+top.slice(4)].pads.disp
   if (buy.step && game.money >= buy.left) return buy
-  if (cashQ.length && cashQ[0].state === 'cash' && !tillManned() && !helpers.some((h) => h.role === 'cash')) return cashPad
+  // not tillManned(): that counts Baekho himself, so standing on the pad sent him away and leaving it called him back (shook every frame, 11-18)
+  if (cashQ.length && cashQ[0].state === 'cash' && !helpers.some((h) => h.role === 'cash')) return cashPad
   const carry = helpers.some((h) => h.role === 'carry'), cook = helpers.some((h) => h.role === 'cook')
   const need = stalls.filter((s) => s.open).sort((a, b) => (a.shown - queues[a.id].length) - (b.shown - queues[b.id].length))
   for (const s of need) {
@@ -1012,7 +1031,7 @@ function guideTarget() {
 function updateStalls(dt) {
   for (const s of stalls) {
     if (!s.open) continue
-    if (s.raw > 0) { s.cookT += dt; if (s.cookT >= s.cook) { s.cookT = 0; s.raw--; s.food++ } }
+    if (s.raw > 0) { s.cookT += dt; if (s.cookT >= s.cook * Math.pow(0.8, perk('fire'))) { s.cookT = 0; s.raw--; s.food++ } }
     const key = s.food + s.raw * 100
     if (s.grillShow.userData.n !== key) {
       s.grillShow.userData.n = key
@@ -1111,18 +1130,23 @@ const platform = {
   },
   onAd(state) {
     if (state === 'opened') { this.adOpen = true; clearTimeout(this.adWait); applyVolume() }
-    if (state === 'closed' || state === 'failed') { this.adOpen = false; applyVolume(); this.afterAd() }
+    if (state === 'closed' || state === 'failed') { this.adOpen = false; this.paused = false; applyVolume(); this.afterAd() }
   },
-  // A full-screen ad only when Play again / Title is pressed after a clear (never over the result itself), never in the
+  // A full-screen ad after a card is picked (the shift is held there) or when Play again / Title is pressed after a clear
+  // (never over the result itself), never in the
   // first 2 minutes on the page, at most once per 3 minutes (BALANCE.md 'ads'). The next screen starts when the ad closes,
   // or after 3 s if no ad came.
   lastAd: 0, adNext: null, adWait: 0, since: 0,
   // rewarded, the player's choice: done(true) only after 'rewarded'; a failed or missing ad gives nothing and goes on
   rewardDone: null, rewarded: false, rewardWait: 0,
   onReward(state) {
+    // 'loading' means the ad is on its way (the QA tool waits for a pick here): the 4 s no-ad timer must not end it
+    if (state === 'loading') { this.adOpen = true; clearTimeout(this.rewardWait) }
     if (state === 'opened') { this.adOpen = true; clearTimeout(this.rewardWait); applyVolume() }
-    if (state === 'rewarded') this.rewarded = true
-    if (state === 'closed' || state === 'failed') { this.adOpen = false; applyVolume(); this.endReward() }
+    // some platforms send 'rewarded' after 'closed' (AI Invasion QA tool 11-21): closed waits 500 ms for it
+    if (state === 'rewarded') { this.rewarded = true; if (this.rewardDone && !this.adOpen) this.endReward() }
+    if (state === 'closed') { this.adOpen = false; this.paused = false; applyVolume(); clearTimeout(this.rewardWait); if (this.rewarded) this.endReward(); else this.rewardWait = setTimeout(() => this.endReward(), 500) }
+    if (state === 'failed') { this.adOpen = false; this.paused = false; applyVolume(); this.endReward() }
   },
   endReward() { clearTimeout(this.rewardWait); const done = this.rewardDone; this.rewardDone = null; const ok = this.rewarded; this.rewarded = false; done?.(ok) },
   rewardedAd(done) {
@@ -1198,6 +1222,195 @@ function applyVolume() {
 }
 const buzz = (ms) => { if (save.shake && navigator.userActivation?.hasBeenActive) try { navigator.vibrate?.(ms) } catch {} }
 
+// ---------------------------------------------------------------- cards and special guests (11-15 user "그냥 노가다 게임같아" → "1+2")
+// Cards: every lamp but the gate offers 3 of PERKS, one is taken; the shift stops while they are on screen (auto takes the first).
+// Each city starts with none; the same card again is Lv2, Lv3 ... (BALANCE.md 'cards').
+const PERKS = [
+  { id: 'tray', icon: '🧺', color: '#ff8a3d' }, // carry +2
+  { id: 'shoes', icon: '👟', color: '#3db6ff' }, // walk +12%
+  { id: 'fire', icon: '🔥', color: '#ff4d4d' }, // cooking takes x0.8
+  { id: 'smile', icon: '😊', color: '#ffd23f' }, // guests wait +25%
+  { id: 'tip', icon: '💰', color: '#3fcf6a' }, // prices x1.2
+  { id: 'crew', icon: '🐯', color: '#c78bff' }, // helpers +20% speed, carry +1
+  { id: 'line', icon: '👥', color: '#ff7ab8' }, // line +1, guests come x1.15 as often
+]
+const perk = (id) => game.perks?.[id] || 0
+function applyPerks() {
+  player.cap = 6 + 2 * perk('tray'); player.speed = 5.4 * (1 + 0.12 * perk('shoes'))
+  for (const h of helpers) { h.speed = 4.4 * (1 + 0.2 * perk('crew')); if (h.role !== 'cash') h.cap = 4 + perk('crew') }
+}
+function queuePick(delay) { game.pickQ = (game.pickQ || 0) + 1; if (!game.picking && !game.pickWait) { game.pickWait = true; setTimeout(openPick, delay * 1000) } }
+function openPick(ids) {
+  game.pickWait = false
+  if (game.phase !== 'play' || !game.pickQ) return
+  game.picking = true; game.pickQ--
+  input.x = input.z = 0; input.id = null; $('stick').classList.add('hide'); $('taste').classList.add('hide')
+  const deal = Array.isArray(ids) ? PERKS.filter((p) => ids.includes(p.id)) : [...PERKS].sort(() => Math.random() - 0.5).slice(0, 3) // ids: tests show chosen cards
+  $('pickTitle').textContent = t('pickTitle')
+  $('pickCards').replaceChildren(...deal.map((p) => {
+    const b = document.createElement('button'), lv = perk(p.id) + 1
+    b.style.setProperty('--c', p.color)
+    b.innerHTML = '<i></i><b></b><span></span><small></small>'
+    b.children[0].textContent = p.icon; b.children[1].textContent = t('perk_' + p.id); b.children[2].textContent = t('perk_' + p.id + 'Desc'); b.children[3].textContent = 'Lv' + lv
+    b.addEventListener('click', () => takePick(p.id), { once: true })
+    return b
+  }))
+  $('pick').classList.remove('hide'); sfx('unlock', 0.4)
+  if (player.auto) setTimeout(() => game.picking && takePick(deal[0].id), 600)
+}
+function takePick(id) {
+  if (!game.picking) return
+  game.perks[id] = perk(id) + 1; applyPerks(); drawPerks()
+  $('pick').classList.add('hide'); sfx('click', 0.5)
+  platform.track('card_pick', { card: id, level: game.perks[id], city: cityId })
+  // the shift is already held here, so this is the ad break inside a city (most players leave before a clear:
+  // 11-10~18 one clear in 7 sessions, ads 0.00/0.30); platform.interstitial keeps 2 min after load and 3 min between ads
+  platform.interstitial(() => {
+    game.picking = false; last = performance.now(); burst(player.x, player.z, 18)
+    if (game.pickQ) { game.pickWait = true; setTimeout(openPick, 400) }
+  })
+}
+function drawPerks() { $('perks').innerHTML = PERKS.filter((p) => perk(p.id)).map((p) => `<span style="--c:${p.color}">${p.icon}<b>${perk(p.id)}</b></span>`).join('') }
+
+// Special guests: one every 40 s from 0:45, never close to the rush. A food streamer (order of 4: paid = guests x2 for 20 s and
+// pay x2), a critic (2 within 25 s: pay x5), or a cat that takes food from a display and runs for the exit (touch it = food back + tip).
+const EVENT_GAP = 40, BOOST_LEN = 20
+let cat = null
+function resetExtras() {
+  Object.assign(game, { perks: {}, picking: false, pickQ: 0, pickWait: false, evT: 45, evN: 0, boostT: 0 })
+  $('pick').classList.add('hide'); applyPerks(); drawPerks(); removeCat(); $('boost').classList.add('hide')
+}
+function stepExtras(dt) {
+  if (game.boostT > 0) { game.boostT -= dt; $('boost').textContent = `${t('boost')} ${Math.ceil(Math.max(0, game.boostT))}`; $('boost').classList.toggle('hide', game.boostT <= 0) }
+  if (cat) stepCat(dt)
+  game.evT -= dt
+  if (game.evT > 0) return
+  game.evT = EVENT_GAP
+  if (game.time > RUSH_AT - 12 && game.time < RUSH_AT + RUSH_LEN + 5) return
+  const kinds = ['star', 'critic']; if (stalls.some((s) => s.open && s.shown > 0) && !cat) kinds.push('cat', 'cat')
+  const kind = game.evN++ === 0 ? 'star' : pick(kinds)
+  if (kind === 'cat') { spawnCat(); bannerShow(t('evCat'), 2.4) } else if (spawnCustomer(kind)) bannerShow(t(kind === 'star' ? 'evStar' : 'evCritic'), 2.4)
+  sfx('rush', 0.35); platform.track('special_guest', { kind, city: cityId })
+}
+// a gold badge with an emoji floats over the head (the food bubble stays under it)
+const BADGE = {}
+function badge(icon, y, parent) {
+  BADGE[icon] ||= canvasTex(128, 128, (g) => {
+    g.fillStyle = '#ffd23f'; g.strokeStyle = '#1b1530'; g.lineWidth = 8; g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2); g.fill(); g.stroke()
+    g.font = `64px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(icon, 64, 68)
+  }).tex
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: BADGE[icon], depthTest: false })); s.scale.set(0.62, 0.62, 1); s.position.y = y; s.renderOrder = 6
+  parent.add(s); return s
+}
+// a streamer holds a phone on a stick, a critic wears a black hat and holds a clipboard; both get a gold ring and a badge
+function dressSpecial(c) {
+  const g = c.rig.g
+  badge(c.kind === 'star' ? '📱' : '⭐', 2.75, g)
+  if (c.kind === 'star') { c.n = 4; cyl(0.015, 0.015, 0.7, 0x222222, 0.28, 1.55, 0.12, g, 5); box(0.2, 0.13, 0.03, 0x1b1b1b, 0.28, 1.92, 0.12, g); sph(0.03, 0xff3b3b, 0.33, 2.0, 0.14, g, 6, 4) }
+  else { c.n = 2; c.pmax = c.patience = 25; cyl(0.25, 0.25, 0.04, 0x1b1530, 0, 1.68, -0.02, g, 12); cyl(0.16, 0.17, 0.2, 0x1b1530, 0, 1.79, -0.02, g, 12); box(0.24, 0.32, 0.03, 0xf4f1e8, 0.24, 1.05, 0.22, g) }
+  g.scale.setScalar(1.12); c.ring.material.color.setHex(0xffd23f)
+}
+function specialDone(c, ok) {
+  if (!c.kind) return
+  if (ok) { burst(c.x, c.z, 40); sfx('unlock') }
+  if (c.kind === 'star' && ok) { game.boostT = BOOST_LEN; game.spawnT = Math.min(game.spawnT, 0.5) }
+  bannerShow(t(`ev${c.kind === 'star' ? 'Star' : 'Critic'}${ok ? 'Ok' : 'No'}`), 2.2)
+  c.kind = ''
+}
+function makeCat() {
+  const g = new THREE.Group(), fur = 0xf08a2c
+  box(0.3, 0.26, 0.56, fur, 0, 0.36, 0, g); sph(0.19, fur, 0, 0.56, 0.3, g, 10, 8)
+  for (const x of [-0.1, 0.1]) { const e = mesh(geo('ear', () => new THREE.ConeGeometry(0.06, 0.13, 4)), M(fur), x, 0.74, 0.3, g); e.rotation.z = -x; sph(0.025, 0x1d1b26, x * 0.7, 0.6, 0.47, g, 5, 4) }
+  const tail = cyl(0.035, 0.03, 0.42, fur, 0, 0.55, -0.36, g, 5); tail.rotation.x = -0.6
+  const inner = new THREE.Group(); inner.scale.setScalar(0.4); g.add(inner)
+  const l = limbs(inner, fur, 0.62, 0.62, 0.3)
+  l.legs.forEach((p) => { p.position.z = -0.5 }); l.arms.forEach((p) => { p.position.z = 0.5 })
+  const loot = new THREE.Group(); loot.position.set(0, 0.52, -0.05); g.add(loot)
+  shadow(g, 0.3); badge('🐱', 1.25, g); g.scale.setScalar(1.4); scene.add(g)
+  return { g, ...l, phase: 0, loot }
+}
+function spawnCat() {
+  const s = pick(stalls.filter((x) => x.open && x.shown > 0)), side = s.x < 0 ? 0 : 1
+  cat = { rig: makeCat(), x: ENTER[side].x, z: ENTER[side].z, face: Math.PI, speed: 3.6, stall: s.id, got: 0, state: 'go', path: [], tries: 0 }
+  catTo(s)
+}
+const catTo = (s) => { cat.stall = s.id; walkTo(cat, s.disp.x + (s.x < 0 ? 0.9 : -0.9), s.disp.z + 0.7) }
+function stepCat(dt) {
+  const arrived = stepWalker(cat, dt)
+  if (Math.hypot(player.x - cat.x, player.z - cat.z) < 1.0 && game.phase === 'play') {
+    const s = stalls[cat.stall], at = new THREE.Vector3(cat.x, 1, cat.z); s.shown += cat.got
+    const bonus = Math.round(3 * s.price * Math.pow(1.2, perk('tip'))); game.money += bonus; game.earned += bonus
+    for (let k = 0; k < 4; k++) setTimeout(() => fly('coin', at, () => new THREE.Vector3(player.x, 1.6, player.z)), k * 60)
+    burst(cat.x, cat.z, 30); sfx('coin'); bannerShow(t('evCatOk'), 2); removeCat(); return
+  }
+  if (!arrived) return
+  if (cat.state === 'go') {
+    const s = stalls[cat.stall], other = stalls.find((x) => x.open && x.shown > 0)
+    if (!s.shown && other && cat.tries++ < 2) { catTo(other); return }
+    cat.got = Math.min(3, s.shown); s.shown -= cat.got
+    for (let k = 0; k < cat.got; k++) { const m = ITEM[`food${s.id}`](); m.position.set(0, k * 0.16, 0); m.scale.setScalar(0.8); cat.rig.loot.add(m) }
+    if (cat.got) sfx('pop')
+    cat.state = 'run'; cat.speed = 2.3; cat.path = [...findPath(cat.x, cat.z, EXIT.x, Math.max(cat.z, CASH.z + 1)), { x: EXIT.x, z: EXIT.z }]
+  } else { if (cat.got) bannerShow(t('evCatNo'), 2); removeCat() }
+}
+function removeCat() { if (cat) { scene.remove(cat.rig.g); cat = null } }
+
+
+// ---------------------------------------------------------------- ranking (Playgama SaaS leaderboards served_<city>, made with the MCP 11-15)
+// Most guests in one night, one board per city, always open on the title (PLAYBOOK 13: the ranking lives in the lobby).
+// The title shows the top 5 of the chosen city and my line under it. The beta can be off: no board = the box stays hidden.
+// ?fakerank: a made-up board to see the box without the portal (?fakerank=out = I am 12th, ?fakerank=empty = nobody yet).
+const ranks = {
+  cache: {},
+  type() {
+    if (Q.has('fakerank')) return 'in_game'
+    try { return platform.ready ? window.bridge.leaderboards?.type || 'not_available' : 'not_available' } catch { return 'not_available' }
+  },
+  send(id, served) {
+    delete this.cache['served_' + id]
+    if (this.type() === 'not_available' || Q.has('fakerank') || player.auto) return
+    try { window.bridge.leaderboards.setScore('served_' + id, Math.round(served))?.catch?.(() => {}) } catch {}
+  },
+  entries(board) {
+    const c = this.cache[board]; if (c && performance.now() - c.at < 60000) return c.ask
+    let ask
+    if (Q.has('fakerank')) {
+      const n = Q.get('fakerank'), names = ['Mochi', 'Captain Crunch', 'Abcdefghijklmnopqrstu', 'Lena', 'Kenji', 'Zoë', 'Pablo', 'Ivan', 'Mia', 'Tom', 'Olga', 'Rui']
+      ask = Promise.resolve(n === 'empty' ? [] : names.map((name, i) => ({ id: i === (n === 'out' ? 11 : 3) ? 'me' : 'p' + i, name, score: 168 - i * 9, rank: i + 1 })))
+    } else { try { ask = Promise.resolve(window.bridge.leaderboards.getEntries(board)) } catch { ask = Promise.reject(new Error('no board')) } }
+    this.cache[board] = { at: performance.now(), ask }; ask.catch(() => { delete this.cache[board] })
+    return ask
+  },
+  myId() { if (Q.has('fakerank')) return 'me'; try { return window.bridge.player?.id ?? null } catch { return null } },
+  line(rank, name, value, me) {
+    const li = document.createElement('li'); if (me) li.className = 'me'
+    li.innerHTML = '<i></i><span></span><b></b>'
+    li.children[0].textContent = rank; li.children[1].textContent = name; li.children[2].textContent = value
+    return li
+  },
+  // top 5; my line yellow. My device record (save.best[city].s) is used when the board has no row for me yet.
+  draw() {
+    const box = $('rankBox'), type = this.type()
+    if (type !== 'in_game' && type !== 'native_popup') { box.classList.add('hide'); return }
+    const id = cityId, board = 'served_' + id, list = $('rankList'), mine = $('rankMe')
+    box.classList.remove('hide'); $('rankHead').textContent = `${t('rank')} · ${t('city_' + id)} · ${t('rankServed')}`
+    list.dataset.board = board; list.replaceChildren(this.line('', '...', '')); mine.replaceChildren()
+    const me = this.myId(), you = t('you'), local = bestOf(id).s || 0
+    this.entries(board).then((all) => {
+      if (list.dataset.board !== board) return
+      all = all || []
+      const isMe = (r) => me !== null && String(r.id) === String(me)
+      const row = all.find(isMe), server = row ? +row.score || 0 : 0, best = Math.max(server, local)
+      if (local > server && me !== null) this.send(id, local)
+      const others = all.filter((r) => !isMe(r)).map((r) => ({ name: r.name || '?', value: +r.score || 0, me: false }))
+      if (best > 0) others.splice(others.filter((r) => r.value >= best).length, 0, { name: row?.name ? `${row.name} (${you})` : you, value: best, me: true })
+      if (!others.length) { const li = this.line('', t('noRecord'), ''); li.className = 'none'; list.replaceChildren(li); return }
+      list.replaceChildren(...others.slice(0, 5).map((r, i) => this.line(i + 1, r.name, r.value, r.me)))
+      const at = others.findIndex((r) => r.me)
+      if (at >= 5) mine.replaceChildren(this.line(at + 1, others[at].name, others[at].value, true))
+    }).catch(() => { const li = this.line('', t('noRecord'), ''); li.className = 'none'; list.replaceChildren(li) })
+  },
+}
 // ---------------------------------------------------------------- HUD and screens
 let bannerT = 0
 function bannerShow(text, secs) { $('banner').textContent = text; $('banner').classList.add('on'); bannerT = secs }
@@ -1223,6 +1436,7 @@ function startGame(fund = 0) {
   Object.assign(game, { phase: 'play', paused: false, offered: false, offerT: 0, time: 0, money: fund, earned: 0, tasted: [0], trainT: 12, served: 0, lost: 0, rush: false, spawnT: 1.2, rushShown: false, lit: 1, clearT: 0, unlocks: [] })
   resetStalls(); arch.visible = false
   Object.assign(player, { x: 0, z: -1.5, items: [], face: Math.PI, path: [] })
+  resetExtras()
   setStep(0)
   for (const id of ['title', 'end', 'panel']) $(id).classList.add('hide')
   $('hud').classList.remove('hide'); $('map').classList.remove('hide')
@@ -1271,12 +1485,21 @@ function switchCity(id) {
   for (const c of customers) removeWalker(c)
   for (const h of helpers) removeWalker(h)
   customers.length = 0; helpers.length = 0; queues.forEach((q) => { q.length = 0 }); cashQ.length = 0
-  buildCity(id); relabel(); audio.switchMusic(); save.city = cityId; writeSave(); updateCamera(0, true)
+  removeCat(); buildCity(id); relabel(); audio.switchMusic(); save.city = cityId; writeSave(); updateCamera(0, true)
 }
 function flyOn() {
   const id = nextCity(); if (!id) return
   const fund = game.fundNext || 0
-  platform.interstitial(() => { switchCity(id); startGame(fund) })
+  platform.interstitial(() => { switchCity(id); startGame(0); if (fund) fundIn(fund) })
+}
+function fundIn(fund) {
+  bannerShow(`✈ ${t('fund')} ${city.cur}${fund}`, 2.2)
+  const n = 12
+  for (let i = 0; i < n; i++) setTimeout(() => {
+    if (game.phase !== 'play') return
+    const add = Math.round(fund * (i + 1) / n) - Math.round(fund * i / n)
+    fly('coin', new THREE.Vector3(player.x + (Math.random() - 0.5) * 3, 4.5, player.z - 2), () => new THREE.Vector3(player.x, 1.3, player.z), () => { game.money += add; sfx('coin', 0.3) })
+  }, 400 + i * 90)
 }
 function doubleFund() {
   $('fundBtn').classList.add('hide')
@@ -1286,6 +1509,7 @@ function drawFund(doubled) {
   const nx = nextCity(); $('fundRow').classList.toggle('hide', !nx || !game.fundNext)
   if (!nx) return
   $('fundLbl').textContent = `${doubled ? t('fund2') : t('fund')} (${t('city_' + nx)})`; $('fundTxt').textContent = CITY[nx].cur + game.fundNext
+  $('fundWhy').textContent = `${city.cur}${game.earnedLast} × 5% = ${city.cur}${Math.round(game.earnedLast * 0.05)} → ${CITY[nx].cur}${game.fundBase}${doubled ? ' × 2' : ''}`
   $('fundBtnTxt').textContent = t('fund2'); $('fundBtn').classList.toggle('hide', doubled || !platform.ready || !game.fundNext)
 }
 // all 8 lamps: fireworks over the landmark, then the postcard and the flight to the next city
@@ -1297,9 +1521,10 @@ function clearCity() {
   const run = { time: game.time, earned: game.earned, served: game.served, lost: game.lost }
   const moreServed = run.served > (rec.s || 0)
   save.clears++; if (newBest) rec.t = secs; if (moreServed) rec.s = run.served
+  if (moreServed) ranks.send(cityId, run.served)
   const nx = nextCity(); if (nx) save.unlocked = Math.max(save.unlocked, CITY_ORDER.indexOf(nx))
   // travel money for the next city: 5% of what was earned, in the next city's money (x2 with an ad) (BALANCE.md)
-  game.fundNext = nx ? Math.round(run.earned * 0.05 / city.mul * CITY[nx].mul) : 0
+  game.fundNext = game.fundBase = nx ? Math.round(run.earned * 0.05 / city.mul * CITY[nx].mul) : 0; game.earnedLast = run.earned
   writeSave()
   perf.flush(); platform.message('gameplay_stopped'); platform.track('city_clear', { city: cityId, secs, earned: game.earned, lost: game.lost })
   setTimeout(() => {
@@ -1351,6 +1576,7 @@ function applyText() {
       host.appendChild(b)
     }
   }
+  if (game.phase === 'title') ranks.draw()
   $('againBtn').textContent = t('again'); $('homeBtn').textContent = t('home')
   $('resumeBtn').textContent = game.phase === 'play' ? t('resume') : t('close'); $('quitBtn').textContent = t('quit')
   if (!$('panel').classList.contains('hide')) renderPanel()
@@ -1384,6 +1610,7 @@ function openPanel() {
   renderPanel(); $('panel').classList.remove('hide'); $('title').classList.add('hide'); $('end').classList.add('hide')
 }
 function closePanel() {
+  platform.paused = false // 11-28: the player resumed; a portal pause that never got lifted must not keep the game frozen
   $('panel').classList.add('hide'); game.paused = false
   if (game.phase === 'title') $('title').classList.remove('hide')
   if (game.phase === 'end') $('end').classList.remove('hide')
@@ -1557,7 +1784,7 @@ let last = performance.now()
 function frame(now) {
   requestAnimationFrame(frame)
   const raw = now - last, real = Math.min(0.05, raw / 1000); last = now
-  const hold = game.paused || platform.adOpen || platform.paused
+  const hold = game.paused || game.picking || platform.adOpen || platform.paused
   const playing = game.phase === 'play' && !hold && !IS_TEST
   perf.frame(now, raw, playing); quality.frame(raw, playing)
   if (!hold) for (let n = 0; n < (game.film || SPEED); n++) step(real, now) // game.film: time-lapse for shorts (tools/short_rec.mjs)
@@ -1580,6 +1807,7 @@ function step(dt, now) {
     game.rush = rushNow
     game.spawnT -= dt
     if (game.spawnT <= 0) { spawnCustomer(); game.spawnT = spawnGap() }
+    stepExtras(dt)
     if (train) {
       game.trainT -= dt
       if (game.trainT <= 0) { game.trainT += TWIST.tokyo.train; train.position.x = -34; train.userData.drop = true }
@@ -1617,8 +1845,9 @@ requestAnimationFrame(frame)
   relabel(); applyVolume()
   $('setBtn').classList.remove('hide')
   platform.message('game_ready')
+  ranks.draw()
   $('loading').classList.add('gone'); setTimeout(() => $('loading').remove(), 500)
   window.__ready = true
 })()
 
-if (Q.has('debug')) window.__gt = { get cityId() { return cityId }, get stalls() { return stalls }, get pads() { return pads }, get STEPS() { return STEPS }, get arch() { return arch }, switchCity, buildCity, tasteCard, setStack, step, quality, perf, THREE, nextCity, flyOn, FOOD_PIC, MAX_GRILL, RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, findPath, camera }
+if (Q.has('debug')) window.__gt = { get cityId() { return cityId }, get stalls() { return stalls }, get pads() { return pads }, get STEPS() { return STEPS }, get arch() { return arch }, switchCity, buildCity, tasteCard, setStack, step, quality, perf, THREE, nextCity, flyOn, FOOD_PIC, MAX_GRILL, RUSH_AT, camera, input, Z0, Z1, XW, scene, offerHelper, takeOffer, clearCity, fundIn, spawnCat, get cat() { return cat }, queuePick, openPick, takePick, perk, ranks, save, platform, audio, renderer, openPanel, closePanel, goTitle, readSave, writeSave, game, player, queues, cashQ, customers, helpers, startGame, spawnCustomer, buy, findPath, camera }

@@ -3,6 +3,7 @@
 'use strict'
 const Q = new URLSearchParams(location.search)
 const BOT = Q.has('bot') || Q.has('sim')
+const RENDER = Q.has('render') // video tool: the page waits and is stepped frame by frame (tools/render_short.mjs)
 const SIM = Q.has('sim') // balance tools: the game runs without drawing, as fast as the computer can (tools/balance.mjs)
 const $ = (id) => document.getElementById(id)
 const C = $('c'), X = C.getContext('2d')
@@ -18,7 +19,7 @@ const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
 
 // ---------------------------------------------------------------- save + text
 const SAVE_KEY = 'skyheroes.v1'
-const SAVE0 = () => ({ sky: 1, skyMax: 1, hero: 'fire_mage', best: 0, bestWave: {}, music: 0.6, sfx: 0.8, shake: true, nums: true, lang: '', gold: 0, meta: {}, owned: ['fire_mage'] })
+const SAVE0 = () => ({ sky: 1, skyMax: 1, hero: 'fire_mage', best: 0, bestWave: {}, music: 0.6, sfx: 0.8, shake: true, nums: true, lang: '', gold: 0, meta: {}, owned: ['fire_mage'], twistSeen: 0 })
 const save = SAVE0()
 let storeTimer = 0
 function store() { // Playgama allows its own storage only (PLAYGAMA.md 3.2.1); a burst of changes is written once
@@ -49,7 +50,7 @@ const NAMES = ['hero_knight', 'hero_fire_mage', 'hero_frost_hunter', 'hero_necro
   'c_main', 'c_power', 'c_rapid', 'c_pierce', 'c_wing', 'c_missile', 'c_orbit', 'c_lightning', 'c_nova', 'c_magnet', 'c_frost', 'c_crit', 'c_drone', 'c_bomb', 'c_life',
   'gem_small', 'gem_big', 'gem_huge', 'ebullet_round', 'ebullet_boss', 'heart_life',
   'enemy_scorpion', 'enemy_vulture', 'enemy_cactus', 'enemy_sandworm', 'enemy_imp', 'enemy_lavablob', 'enemy_skullbat', 'enemy_magma', 'enemy_thundercloud', 'enemy_harpy', 'enemy_windspirit', 'enemy_armor', 'enemy_ufo', 'enemy_meteor', 'enemy_starjelly', 'enemy_alien', 'boss_scorpking', 'boss_mummy', 'boss_djinn', 'boss_lavadragon', 'boss_boneking', 'boss_firegiant', 'boss_stormgiant', 'boss_griffin', 'boss_thunderking', 'boss_moonbeast', 'boss_stardragon', 'boss_darkstar', 'd_desert_cactus', 'd_desert_palm', 'd_desert_skull', 'd_desert_rock', 'd_cloud_tower', 'd_cloud_pillar', 'd_cloud_puff', 'd_cloud_flag', 'd_space_planet', 'd_space_crystal', 'd_space_rock', 'd_space_satellite', 'd_hell_cold_rock', 'd_hell_dry_thorns', 'd_hell_lava_vent', 'd_hell_sulfur_rock',
-  'c_coin', 'c_lock', 's_fire_mage', 's_frost_hunter', 's_necromancer', 's_gambler', 's_smith', 's_knight', 'c_greed', 'c_growth', 'c_shop',
+  'it_bread', 'it_toy', 'c_coin', 'c_lock', 's_fire_mage', 's_frost_hunter', 's_necromancer', 's_gambler', 's_smith', 's_knight', 'c_greed', 'c_growth', 'c_shop',
   'd_bush', 'd_flowers', 'd_rock', 'd_stump', 'd_tree_pine', 'd_tree_round', 'd_grave_dead_tree', 'd_grave_tomb', 'd_hell_bone_pile', 'd_snow_ice_pillar', 'd_snow_pine', 'd_snow_rock', 't_slate', 't_ice']
 const loaded = Promise.all(NAMES.map((n) => new Promise((res) => { const i = new Image(); i.onload = res; i.onerror = res; i.src = `assets/${n}.webp`; IMG[n] = i })))
 
@@ -148,12 +149,21 @@ const audio = {
     } catch { this.ctx = null }
   },
   async load(f) { if (this.buf[f]) return; try { this.buf[f] = await this.ctx.decodeAudioData(await (await fetch(`audio/${f}.ogg`)).arrayBuffer()) } catch {} },
-  apply() { if (!this.ctx) return; const silent = !platform.audioOn || platform.adOpen || platform.paused || document.hidden; this.master.gain.value = silent ? 0 : 1; this.sfxG.gain.value = save.sfx; this.musG.gain.value = save.music * 0.5 },
+  apply() { if (!this.ctx) return; const silent = !platform.audioOn || platform.adOpen || platform.paused || document.hidden; this.master.gain.value = silent ? 0 : 1; this.sfxG.gain.value = save.sfx; this.musG.gain.value = save.music * 0.5 * (game.state === 'twist' ? 0.25 : 1) },
   play(k) {
+    if (RENDER && game.state === 'run') { const t = renderClock; if (!soundLog.length || soundLog[soundLog.length - 1].t !== t || soundLog[soundLog.length - 1].k !== k) soundLog.push({ t, k }) }
     const d = SFX[k]; if (!d || !this.ctx || !this.buf[d[0]]) return
     const now = performance.now(); if (now - (this.last[k] || 0) < d[2]) return; this.last[k] = now
     const s = this.ctx.createBufferSource(), g = this.ctx.createGain(); s.buffer = this.buf[d[0]]; s.playbackRate.value = k === 'shot' || k === 'hit' || k === 'pop' ? 0.92 + Math.random() * 0.16 : 1; g.gain.value = d[1]
     s.connect(g); g.connect(this.sfxG); s.start()
+  },
+  wind(on) { // the twist: soft wind made from filtered noise (no file)
+    if (!this.ctx) return
+    if (!on) { try { this.windSrc?.stop() } catch {} this.windSrc = null; return }
+    const n = this.ctx.sampleRate * 2, b = this.ctx.createBuffer(1, n, this.ctx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1
+    const s = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain(), lfo = this.ctx.createOscillator(), lg = this.ctx.createGain()
+    s.buffer = b; s.loop = true; f.type = 'bandpass'; f.frequency.value = 420; f.Q.value = 0.8; g.gain.value = 0.22; lfo.frequency.value = 0.3; lg.gain.value = 0.12
+    lfo.connect(lg); lg.connect(g.gain); s.connect(f); f.connect(g); g.connect(this.sfxG); s.start(); lfo.start(); this.windSrc = s
   },
   music(name) { // called every frame with the wanted track; switches only when it changes
     this.want = name
@@ -182,7 +192,9 @@ const platform = {
     } catch { this.ready = false }
   },
   msg(n) { try { if (this.ready) window.bridge.platform.sendMessage(n) } catch {} },
-  onAd(s) { if (s === 'opened') { this.adOpen = true; audio.apply() } if (s === 'closed' || s === 'failed') { this.adOpen = false; audio.apply(); this.afterAd() } },
+  boardType() { try { return this.ready ? window.bridge.leaderboards?.type || 'not_available' : 'not_available' } catch { return 'not_available' } },
+  setScore(id, score) { if (this.boardType() === 'not_available' || SIM || (BOT && !Q.has('debug'))) return; try { window.bridge.leaderboards.setScore(id, score)?.catch?.(() => {}) } catch {} },
+  onAd(s) { if (s === 'opened') { this.adOpen = true; audio.apply() } if (s === 'closed' || s === 'failed') { this.adOpen = false; this.paused = false; audio.apply(); this.afterAd() } }, // 11-28: the portal may never lift the pause it sent for the ad
   afterAd() { const n = this.adNext; this.adNext = null; clearTimeout(this.adWait); n?.() },
   interstitial(next) { // when the player presses Again / Heroes (not on the result screen), from the 3rd run, at most every 3 minutes
     if (!this.ready || runs < 3 || Date.now() - this.lastAd < 180000) { next(); return }
@@ -190,7 +202,7 @@ const platform = {
     try { window.bridge.advertisement.showInterstitial() } catch { this.afterAd() }
   },
   rewardDone: null, rewarded: false,
-  onReward(s) { if (s === 'opened') { this.adOpen = true; audio.apply() } if (s === 'rewarded') this.rewarded = true; if (s === 'closed' || s === 'failed') { this.adOpen = false; audio.apply(); const d = this.rewardDone; this.rewardDone = null; d?.(this.rewarded); this.rewarded = false } },
+  onReward(s) { if (s === 'opened') { this.adOpen = true; audio.apply() } if (s === 'rewarded') this.rewarded = true; if (s === 'closed' || s === 'failed') { this.adOpen = false; this.paused = false; audio.apply(); const d = this.rewardDone; this.rewardDone = null; d?.(this.rewarded); this.rewarded = false } },
   rewardedAd(done) { if (!this.ready) { done(false); return } this.rewardDone = done; this.rewarded = false; this.lastAd = Date.now(); try { window.bridge.advertisement.showRewarded() } catch { this.rewardDone = null; done(false) } },
   bannerOn: false,
   banner(on) { // menus only, never in a run; only where the portal has banners (Playgama's own site has none)
@@ -217,7 +229,7 @@ const stat = {
   get magnet() { return 140 * (1 + 0.5 * lvOf('magnet')) * (1 + 0.12 * mLv('magnet')) },
 }
 function resetRun() {
-  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, sky: SIM ? +Q.get('sky') || 1 : Math.min(save.sky || 1, save.skyMax || 1), forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], hitBy: [], gold: 0 })
+  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, sky: SIM ? +Q.get('sky') || 1 : Math.min(save.sky || 1, save.skyMax || 1), forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], hitBy: [], gold: 0, help: 0, helpUsed: 0, helpT: 0, snaps: {}, wantSnap: '', dread: 0, fled: 0, drop: null, tw: null })
   Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0, supers: 1, guard: 0, guardT: 0 })
   foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; up = { main: 1 }
   timers = { missile: 0, lightning: 0, bomb: 6, drone: 0, wing: 0 }
@@ -318,6 +330,11 @@ function tick(dt) {
   } else if (game.bossOn && (game._next ?? 0) <= game.time) { formation(Math.max(1, game.wave - 2)); game._next = game.time + 4 }
   }
   for (let i = spawnQ.length - 1; i >= 0; i--) if (spawnQ[i].at <= game.time) { const s = spawnQ[i]; spawn(s.kind, s.x, s.y); spawnQ.splice(i, 1) }
+  if ([3, 8, 13].includes(game.wave) && !game.fled && game.waveT > 3) { game.fled = 1; const kind = skyOf()?.kinds[0] || 'bat', x0 = rnd(140, W - 140); for (let i = 0; i < 4; i++) spawn(kind, x0 + (i % 2 ? 40 : -40), -50 - i * 80, { flee: 1, vy: KINDS[kind].sp * 2.4 }) } // story: some run past without fighting
+  if (game.wave === 1 && game.hint <= 0 && foes.length >= 5 && !game.snaps.w1) game.wantSnap = 'w1'
+  if (game.dread > 0) game.dread -= dt
+  if (game.drop && (game.drop.t += dt) > 1.6) game.drop = null
+  helpOffer()
   // player
   input.apply(dt)
   if (P.inv > 0) P.inv -= dt
@@ -353,6 +370,7 @@ function tick(dt) {
     const f = foes[i]; f.t += dt; if (f.hitT > 0) f.hitT -= dt; if (f.slow > 0) f.slow -= dt
     const sm = (f.slow > 0 ? 0.5 : 1) * (f.y < 70 && f.kind !== 'boss' && KINDS[f.kind]?.ai !== 'pop' ? 3 : 1) // enter the screen quickly, then their own speed
     if (f.kind === 'boss') bossAI(f, dt)
+    else if (f.flee) { f.y += f.vy * dt; f.x += Math.sin(f.t * 7 + f.ph) * 50 * dt; if (!game.snaps.pass && f.y > H * 0.3 && f.y < H * 0.55) game.wantSnap = 'pass' } // runs past: no shots, no touch
     else {
       const k = KINDS[f.kind]
       if (k.ai === 'sway') { f.x += Math.sin(f.t * 2 + f.ph) * 60 * dt; f.y += f.vy * dt * sm }
@@ -368,7 +386,7 @@ function tick(dt) {
     }
     f.x = clamp(f.x, 16, W - 16)
     if (f.y > H + 80 || f.x < -100 || f.x > W + 100) { foes.splice(i, 1); continue }
-    if (P.inv <= 0 && dist2(f, P) < (f.r * 0.8 + P.r) ** 2) { game.hitBy.push(f.kind); playerHit() }
+    if (!f.flee && P.inv <= 0 && dist2(f, P) < (f.r * 0.8 + P.r) ** 2) { game.hitBy.push(f.kind); playerHit() }
   }
   // enemy bullets
   for (let i = ebul.length - 1; i >= 0; i--) { const b = ebul[i]; b.x += b.vx * dt; b.y += b.vy * dt; if (b.y > H + 20 || b.y < -40 || b.x < -20 || b.x > W + 20) { ebul.splice(i, 1); continue } if (P.inv <= 0 && dist2(b, P) < (b.r + P.r * 0.7) ** 2) { game.hitBy.push('shot:' + (b.from || 'boss')); ebul.splice(i, 1); playerHit(); break } } // playerHit replaces ebul (clears nearby bullets), so stop walking the old one
@@ -396,6 +414,9 @@ function enemyFire0(f, k) {
 }
 function bossAI(f, dt) {
   if (f.y < 190) { f.y += 90 * dt; return }
+  if ((f.boss === 5 || f.boss === 10) && !f.looked && f.hp < f.max * 0.25) { f.looked = 1; f.lookT = 1.3; game.dread = 1.3 } // story: it looks back up, at what is coming
+  if (f.lookT > 0) { f.lookT -= dt; if (f.lookT < 0.7 && !game.snaps.look) game.wantSnap = 'look'; return }
+  if (f.img === 'boss_warlock' && f.hp < f.max * 0.3) game.dread = Math.max(game.dread, 0.8) // the warlock grins and the cloud starts to come
   f.x = W / 2 + Math.sin(f.t * 0.6) * 150
   f.shoot -= dt
   if (f.shoot <= 0) {
@@ -406,6 +427,7 @@ function bossAI(f, dt) {
   }
 }
 function hurt(f, dmg, src) {
+  if (f.lookT > 0) return
   let d = dmg, crit = Math.random() < stat.crit + (src?.lucky || 0) + 0.05 * lvOf('jackpot') // gambler coins: 30% lucky hits of their own
   if (crit) { d *= 2.5; if (lvOf('jackpot') && Math.random() < 0.1) game.gold += 1 }
   if (f.slow > 0 && lvOf('shatter')) d *= 1 + 0.25 * lvOf('shatter')
@@ -423,7 +445,8 @@ function kill(f) {
   if (f.kind === 'boss') {
     audio.play('warp'); P.supers = Math.min(3, P.supers + 1); game.bossOn = false; game.bossDone = true; game.bossT[game.wave] = Math.round(game.time - game.bossFrom); game.shake = 14; game.flash = 0.25; audio.play('big'); ebul = []
     for (let i = 0; i < 30; i++) gems.push({ x: f.x + rnd(-80, 80), y: f.y + rnd(-60, 60), v: 3, huge: 1, pull: 1 })
-    game.later = { t: 1.2, fn: () => { if (game.wave >= 15) finish(true); else nextWave() } } // game time, so pausing or leaving does not move the wave on
+    if (STORY_DROP[f.img]) game.drop = { img: STORY_DROP[f.img], x: f.x, y: f.y, t: 0 }
+    game.later = { t: 1.2, fn: () => { if (game.wave >= 15) { if (game.sky === 1 && !save.twistSeen && !SIM) startTwist(); else finish(true) } else nextWave() } } // game time, so pausing or leaving does not move the wave on
     return
   }
   const k = KINDS[f.kind]
@@ -461,7 +484,7 @@ function useSuper() {
 }
 function superBtn() { const b = $('superBtn'); b.querySelector('img').src = `assets/s_${P.hero}.webp`; b.querySelector('b').textContent = P.supers; b.classList.toggle('empty', P.supers <= 0) }
 function playerHit() {
-  if (P.inv > 0) return
+  if (P.inv > 0 || (RENDER && Q.has('god'))) return // video: the hero is never hit
   if (P.guard) { P.guard = 0; P.inv = 1; ebul = ebul.filter((b) => dist2(b, P) > 160 * 160); burst(P.x, P.y, 40, true); audio.play('warp'); return } // knight's shield takes this one
   P.lives--; game.hitAt.push(game.wave); P.inv = 2; game.shake = 16; game.flash = 0.2; audio.play('hurt')
   ebul = ebul.filter((b) => dist2(b, P) > 220 * 220)
@@ -469,6 +492,7 @@ function playerHit() {
   if (P.lives <= 0) finish(false)
 }
 function nextWave() {
+  game.fled = 0
   if (game.wave >= 15) { finish(true); return }
   for (const g of gems) g.pull = 1
   game.gold += 5 * game.wave
@@ -490,7 +514,137 @@ function weapons(dt) {
       for (const f of foes) if (!f.dead && dist2(o, f) < (f.r + 14) ** 2 && (f.orbT || 0) < game.time) { f.orbT = game.time + 0.25; hurt(f, d * (lvOf('sawring') ? 3 : 1.2)) } } }
   if (lvOf('lightning')) { timers.lightning -= dt; if (timers.lightning <= 0) { timers.lightning = 1.6 - 0.15 * lvOf('lightning'); let from = P, hit = new Set(); for (let j = 0; j < 2 + lvOf('lightning') + (lvOf('blizzard') ? 4 : 0); j++) { const f = nearest(from, j ? 320 : 1400, hit); if (!f) break; bolts.push({ a: { x: from.x, y: from.y }, b: { x: f.x, y: f.y }, t: 0, ice: lvOf('blizzard') }); hit.add(f); hurt(f, d * 2.4 * (lvOf('blizzard') ? 2 : 1), lvOf('blizzard') ? { freeze: 1 } : null); from = f } } }
   if (lvOf('drone')) { timers.drone -= dt * stat.rate; if (timers.drone <= 0) { timers.drone = 0.4; for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1, dx = P.x + s * (70 + Math.floor(i / 2) * 26), dy = P.y + 40; shots.push(lvOf('squad') ? { x: dx, y: dy, vx: 0, vy: -700, r: 9, dmg: d * 2, home: 1, life: 1.8, img: 'p_missile', size: 34, aim: 1, glow: '#ff9a6a' } : { x: dx, y: dy, vx: 0, vy: -800, r: 8, dmg: d * 0.9, pierce: 0, life: 1.3, img: 'p_shuriken', spin: 18, size: 30, glow: '#bfe8ff' }) } } }
+  if (game.help > 0) helpers(dt)
   if (lvOf('bomb')) { timers.bomb -= dt; if (timers.bomb <= 0) { timers.bomb = 14 - 1.6 * lvOf('bomb'); fx.push({ k: 'bomb', x: P.x, y: P.y - 200, R: 520, t: 0, d: 0.6 }); ebul = []; game.shake = 12; audio.play('big'); for (const f of [...foes]) hurt(f, d * 6 * (f.kind === 'boss' ? 0.5 : 1)) } }
+}
+
+// ---------------------------------------------------------------- story (gamedev-kit/narrative/2026-11-08_skyfall_squad.md): the monsters were running from the Great Sleep
+// No words anywhere. Hints: some foes run past without fighting (waves 3, 8, 13), bosses 5 and 10 look back up before they fall,
+// the ogre drops bread and the demon a toy, the warlock grins as the purple cloud comes. Twist: the first sky-1 clear.
+const STORY_DROP = { boss_ogre: 'it_bread', boss_demon: 'it_toy' }
+function takeSnap(key, ox, oy, scale) { // a small copy of the field now, for the flashback
+  game.wantSnap = ''; if (game.snaps[key] || SIM) return
+  const c = document.createElement('canvas'); c.width = 324; c.height = Math.round(324 * H / W)
+  try { c.getContext('2d').drawImage(C, ox, oy, W * scale, H * scale, 0, 0, c.width, c.height); game.snaps[key] = c } catch {}
+}
+function sleepCloud() {
+  if (IMG.cloud_sleep) return IMG.cloud_sleep
+  const im = IMG.d_cloud_puff; if (!im || !im.width) return null
+  const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d')
+  x.drawImage(im, 0, 0); x.globalCompositeOperation = 'source-atop'; x.fillStyle = 'rgba(92,48,160,0.72)'; x.fillRect(0, 0, c.width, c.height)
+  return (IMG.cloud_sleep = c)
+}
+function cloudBand(y, split, alpha) { // the Great Sleep: a wall of purple cloud whose lower edge is at y; split > 0 pulls it apart
+  if (alpha <= 0) return
+  X.save(); X.globalAlpha = alpha
+  const g = X.createLinearGradient(0, y - H * 0.6, 0, y); g.addColorStop(0, 'rgba(46,22,92,0.97)'); g.addColorStop(1, 'rgba(120,70,190,0.8)')
+  for (const side of [-1, 1]) {
+    const dx = side * split * W * 0.7
+    X.save(); X.beginPath(); X.rect(side < 0 ? dx - W : W / 2 + dx, -10, W * 1.5, y + 70); X.clip(); X.fillStyle = g; X.fillRect(-W, -10, W * 3, y + 10)
+    const cl = sleepCloud()
+    if (cl) for (let i = 0; i < 9; i++) { const x = (i + 0.5) * W / 9 + dx, b = Math.sin(game.time * 1.5 + i) * 10, w = 150, h = w * cl.height / cl.width; X.drawImage(cl, x - w / 2, y + b - h / 2, w, h) }
+    X.restore()
+  }
+  X.restore()
+}
+function storyDraw() {
+  if (game.state === 'run' && save.twistSeen) { const g = X.createLinearGradient(0, 0, 0, H * 0.14); g.addColorStop(0, 'rgba(110,60,180,0.22)'); g.addColorStop(1, 'rgba(110,60,180,0)'); X.fillStyle = g; X.fillRect(0, 0, W, H * 0.14) } // seen it once: the sky stays faintly purple
+  if (game.dread > 0 && game.state === 'run') { const a = Math.min(1, game.dread), g = X.createLinearGradient(0, 0, 0, H * 0.45); g.addColorStop(0, `rgba(60,22,120,${0.8 * a})`); g.addColorStop(1, 'rgba(60,22,120,0)'); X.fillStyle = g; X.fillRect(0, 0, W, H * 0.45); cloudBand(-20 + 70 * a, 0, a) } // something big is coming from above
+  if (game.drop) { const d = game.drop, u = d.t / 1.6; sprite(d.img, d.x + Math.sin(d.t * 4) * 10, d.y + d.t * 110, 84, Math.sin(d.t * 5) * 0.3, 1 - u * u) }
+  const tw = game.tw; if (game.state !== 'twist' || !tw) return
+  const T = tw.t
+  for (const f of tw.fled) if (T > f.at && f.y < H + 80) {
+    const sz = KINDS[f.kind].r * 2.4, x = f.x + Math.sin(T * 9 + f.at) * 5, lean = f.side * 0.35 + Math.sin(T * 30 + f.at) * 0.08 // leaning back: looking up at what is coming
+    sprite(KINDS[f.kind].img, x, f.y, sz, lean)
+    const dx = x + f.side * sz * 0.42, dy = f.y - sz * 0.42 - ((T * 3 + f.at) % 1) * 10 // one sweat drop
+    X.fillStyle = '#9fe0ff'; X.strokeStyle = '#2a1d55'; X.lineWidth = 3; X.beginPath(); X.moveTo(dx, dy - 11); X.quadraticCurveTo(dx + 8, dy + 2, dx, dy + 6); X.quadraticCurveTo(dx - 8, dy + 2, dx, dy - 11); X.fill(); X.stroke()
+  }
+  if (T > 3.4) { const a = Math.min(1, (T - 3.4) / 1.8), g = X.createLinearGradient(0, 0, 0, H * 0.75); g.addColorStop(0, `rgba(255,190,120,${0.75 * a})`); g.addColorStop(0.5, `rgba(255,150,170,${0.35 * a})`); g.addColorStop(1, 'rgba(255,150,170,0)'); X.fillStyle = g; X.fillRect(0, 0, W, H * 0.75) } // dawn
+  cloudBand(T < 3.2 ? -H * 0.05 + (T / 3.2) * H * 0.45 : H * 0.4, Math.max(0, (T - 3.75) / 1.6), T < 3.75 ? 1 : Math.max(0, 1 - (T - 3.75) / 1.8))
+  if (T > 3 && T < 3.9) { // one beam from the hero up into the cloud
+    const u = (T - 3) / 0.9, a = u < 0.8 ? 1 : (1 - u) * 5, w = 70 + Math.sin(T * 40) * 8, col = SUPER[P.hero][1]
+    X.save(); X.globalCompositeOperation = 'lighter'
+    let g = X.createLinearGradient(P.x - w, 0, P.x + w, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, col); g.addColorStop(1, 'rgba(255,255,255,0)')
+    X.globalAlpha = a; X.fillStyle = g; X.fillRect(P.x - w, -20, w * 2, P.y - 30)
+    X.fillStyle = 'rgba(255,255,240,0.95)'; X.fillRect(P.x - w * 0.22, -20, w * 0.44, P.y - 30)
+    X.restore()
+  }
+  for (const e of tw.esc) if (T > e.at) sprite(KINDS[e.kind].img, e.x, e.y, Math.max(56, KINDS[e.kind].r * 2.4), Math.sin(T * 4 + e.at) * 0.06)
+  if (tw.white > 0) { X.fillStyle = `rgba(255,250,235,${Math.min(1, tw.white)})`; X.fillRect(0, 0, W, H) }
+  const cut = T >= tw.backAt ? tw.cuts[Math.floor((T - tw.backAt) / 1.15)] : null
+  if (cut) { // the same moments from this run, seen again
+    const k = (T - tw.backAt) % 1.15, im = game.snaps[cut]
+    X.fillStyle = '#1a1236'; X.fillRect(0, 0, W, H)
+    X.save(); X.globalAlpha = Math.min(1, k * 5); X.drawImage(im, 26, 26, W - 52, H - 52); X.globalAlpha = Math.min(1, k * 5) * 0.32; X.fillStyle = '#b08a5a'; X.fillRect(26, 26, W - 52, H - 52); X.restore()
+    X.strokeStyle = '#f4e6c8'; X.lineWidth = 8; X.strokeRect(26, 26, W - 52, H - 52)
+    const g = X.createLinearGradient(0, 26, 0, H * 0.4); g.addColorStop(0, 'rgba(90,40,160,0.55)'); g.addColorStop(1, 'rgba(90,40,160,0)'); X.fillStyle = g; X.fillRect(26, 26, W - 52, H * 0.4 - 26) // now we know what was up there
+  }
+}
+function startTwist() {
+  game.state = 'twist'; foes = []; ebul = []; spawnQ = []; game.dread = 0; hide('pauseBtn'); hide('superBtn'); hide('helpBtn'); helpShown = false
+  const kinds = ['slime', 'bat', 'ghost', 'charger', 'slime', 'bat', 'splitter', 'ghost']
+  const cuts = ['w1', 'pass', 'look'].filter((k) => game.snaps[k])
+  game.tw = { t: 0, white: 0, fired: false, cuts, backAt: 7.2, end: 7.2 + cuts.length * 1.15 + (cuts.length ? 0.9 : 0),
+    fled: kinds.map((kind, i) => { const side = i % 2 ? 1 : -1, k = Math.floor(i / 2); return { kind, side, x: W / 2 + side * (105 + (k % 2) * 62), y: H * 0.12 - k * 46, vy: 640, at: 0.6 + k * 0.12 } }), // two tight groups, same way, brushing past the hero
+    esc: ['slime', 'bat', 'ghost', 'mini'].map((kind, i) => ({ kind, x: W / 2, y: H + 80 + i * 130, dy: 120 + i * 130, at: 4.8 + i * 0.2 })) } // one line right under the hero
+  audio.apply(); audio.wind(true)
+}
+function twistTick(dt) {
+  const tw = game.tw; tw.t += dt; const T = tw.t
+  game.time += dt; game.scroll += dt * (T > 4.5 ? 240 : 70); updateDecos(dt)
+  P.x += (W / 2 - P.x) * Math.min(1, dt * 2); P.y += ((T > 4.5 ? H * 0.4 : H * 0.66) - P.y) * Math.min(1, dt * 1.5)
+  for (const f of tw.fled) if (T > f.at) f.y += f.vy * dt
+  for (const e of tw.esc) if (T > e.at) { e.x += (P.x - e.x) * Math.min(1, dt * 4); e.y += (P.y + e.dy - e.y) * Math.min(1, dt * 2.5) }
+  for (let i = gems.length - 1; i >= 0; i--) { const g = gems[i], a = Math.atan2(P.y - g.y, P.x - g.x); g.x += Math.cos(a) * 900 * dt; g.y += Math.sin(a) * 900 * dt; if (dist2(g, P) < 30 * 30) gems.splice(i, 1) } // the coins fly to the hero
+  if (game.drop && (game.drop.t += dt) > 1.6) game.drop = null
+  if (T >= 3 && !tw.fired) { tw.fired = true; game.shake = 10; audio.play('big') } // one beam at the cloud (drawn in storyDraw)
+  if (T >= 3.7 && !tw.split) { tw.split = true; game.shake = 16; tw.white = 0.8; audio.play('warp') } // ... and it splits
+  if (tw.white > 0) tw.white -= dt * 1.6
+  for (let i = shots.length - 1; i >= 0; i--) { const s = shots[i]; s.x += (s.vx || 0) * dt; s.y += s.vy * dt; if (s.y < -120) shots.splice(i, 1) }
+  if (game.shake > 0) game.shake = Math.max(0, game.shake - dt * 30)
+  if (T >= tw.end) endTwist()
+}
+function endTwist() {
+  if (game.state !== 'twist') return
+  save.twistSeen = 1; store(); audio.wind(false); shots = []; game.tw = null; game.state = 'run'; audio.apply(); finish(true)
+}
+
+// ---------------------------------------------------------------- backup: a rewarded ad calls two other heroes for 25 s (offered at a boss or on the last life)
+const HELP_SECS = 25, HELP_MAX = 2
+const helpHeroes = () => { const i = HEROES.indexOf(P.hero); return [HEROES[(i + 1) % HEROES.length], HEROES[(i + 5) % HEROES.length]] }
+const helpPos = (k) => ({ x: clamp(P.x + (k ? 118 : -118), 40, W - 40), y: P.y + 26 + Math.sin(game.time * 4 + k * 2) * 8 })
+function helpers(dt) {
+  game.help -= dt; game.helpT -= dt * stat.rate
+  const fire = game.helpT <= 0; if (fire) game.helpT = 0.22
+  helpHeroes().forEach((h, k) => {
+    const o = helpPos(k)
+    for (let j = ebul.length - 1; j >= 0; j--) if (dist2(o, ebul[j]) < (40 + ebul[j].r) ** 2) { burst(ebul[j].x, ebul[j].y, 8, false); ebul.splice(j, 1) } // their bodies block bullets
+    if (!fire) return
+    const [img, glow] = SUPER[h], n = 1 + Math.floor(game.wave / 5)
+    for (let i = 0; i < n; i++) shots.push({ x: o.x + (i - (n - 1) / 2) * 14, y: o.y - 30, vx: (i - (n - 1) / 2) * 90, vy: -760, r: 10, dmg: stat.dmg * 2.2, home: 1, life: 2, img, rot: -Math.PI / 2, size: 40, glow, aim: 1, spin: img === 'p_hammer' || img === 'p_card' ? 12 : 0 })
+  })
+}
+function callHelp() {
+  game.help = HELP_SECS; game.helpUsed++; game.helpT = 0; ebul = []; P.inv = Math.max(P.inv, 2)
+  for (const k of [0, 1]) { const o = helpPos(k); burst(o.x, o.y, 40, true) }
+  banner(t('backup'), '#8fe3ff'); audio.play('warp'); game.shake = 8
+}
+let helpShown = false, helpG = -1
+const HELP_KILLS = 120 // no ads here (web-play, no bridge, no rewarded ads): the same backup once a run, after this many kills
+const adHelp = () => platform.ready && window.bridge?.advertisement?.isRewardedSupported !== false
+function helpOffer() { // with ads: the button shows only when it helps (a boss is on, or one life is left); without: a gauge fills with kills
+  const ad = adHelp(), b = $('helpBtn')
+  const on = !BOT && !RENDER && game.state === 'run' && game.help <= 0 && (ad ? game.helpUsed < HELP_MAX && ((game.bossOn && game.time - game.bossFrom > 4) || P.lives === 1) : game.helpUsed < 1)
+  if (!ad && on) { const g = Math.min(1, game.kills / HELP_KILLS), q = Math.floor(g * 50); if (q !== helpG) { helpG = q; b.style.setProperty('--g', g * 360 + 'deg'); b.classList.toggle('full', g >= 1) } }
+  if (on === helpShown) return
+  helpShown = on; b.classList.toggle('hide', !on); b.classList.toggle('gauge', !ad)
+  if (on) { const [x, y] = helpHeroes(), im = b.querySelectorAll('img'); im[0].src = `assets/hero_${x}.webp`; im[1].src = `assets/hero_${y}.webp` }
+}
+function askHelp() {
+  if (game.state !== 'run' || !helpShown) return
+  if (!adHelp()) { if (game.kills >= HELP_KILLS) { helpShown = false; $('helpBtn').classList.add('hide'); callHelp() } return }
+  game.state = 'ad'; helpShown = false; $('helpBtn').classList.add('hide') // the run waits while the ad plays
+  platform.rewardedAd((ok) => { if (game.state !== 'ad') return; game.state = 'run'; if (ok) callHelp() })
 }
 
 // ---------------------------------------------------------------- cards
@@ -562,7 +716,8 @@ function draw() {
   for (const f of foes) {
     const img = f.kind === 'boss' ? f.img : KINDS[f.kind].img, size = f.r * 2.4
     X.save(); X.fillStyle = 'rgba(20,10,40,0.25)'; X.beginPath(); X.ellipse(f.x + 10, f.y + f.r * 0.9, f.r * 0.8, f.r * 0.3, 0, 0, 7); X.fill(); X.restore()
-    sprite(img, f.x, f.y, size, 0, 1)
+    if (f.lookT > 0 || f.flee || (f.img === 'boss_warlock' && f.hp < f.max * 0.3)) { X.save(); X.translate(f.x, f.y); if (f.lookT > 0) { X.scale(Math.floor(f.lookT * 3.2) % 2 ? -1 : 1, 1); X.rotate(-0.12) } else if (f.flee) X.rotate(Math.sin(f.t * 30) * 0.12); else { const k = 1 + Math.abs(Math.sin(f.t * 9)) * 0.06; X.scale(k, 2 - k) } sprite(img, 0, 0, size, 0, 1); X.restore() }
+    else sprite(img, f.x, f.y, size, 0, 1)
     if (f.hitT > 0) { X.save(); X.globalCompositeOperation = 'lighter'; sprite(img, f.x, f.y, size, 0, 0.5); X.restore() }
     if (((f.dash > 0) || (KINDS[f.kind]?.rain && f.shoot < 0.6 && f.y > 20)) && Math.floor(f.t * 12) % 2) { X.save(); X.globalCompositeOperation = 'lighter'; sprite(img, f.x, f.y, size, 0, 0.6); X.restore() } // about to charge: the foe itself blinks
     if (f.kind === 'boss') { const w = 300, x0 = W / 2 - 20 - w / 2; X.fillStyle = '#2a1d55'; X.fillRect(x0 - 3, 84, w + 6, 20); X.fillStyle = '#ff5a6a'; X.fillRect(x0, 87, w * Math.max(0, f.hp / f.max), 14) }
@@ -581,12 +736,14 @@ function draw() {
   // orbit orbs
   if (lvOf('orbit') && game.state !== 'title') { const n = lvOf('sawring') ? 8 : 1 + lvOf('orbit'), R = orbitR(); for (let i = 0; i < n; i++) { const a = game.time * 4 + i * Math.PI * 2 / n; sprite(lvOf('sawring') ? 'p_shuriken' : 'p_orbit_orb', P.x + Math.cos(a) * R, P.y + Math.sin(a) * R, lvOf('sawring') ? 46 : 34, lvOf('sawring') ? game.time * 12 : 0) } }
   // drones
+  if (game.state !== 'title' && game.help > 0) helpHeroes().forEach((h, k) => { const o = helpPos(k); glow('#8fe3ff', o.x, o.y, 60); sprite('hero_' + h, o.x, o.y, 84, Math.sin(game.time * 3 + k) * 0.06, game.help < 3 ? 0.4 + 0.6 * Math.abs(Math.sin(game.time * 10)) : 1) })
   if (game.state !== 'title') for (let i = 0; i < lvOf('drone'); i++) { const s = i % 2 ? 1 : -1; sprite('p_shuriken', P.x + s * (70 + Math.floor(i / 2) * 26), P.y + 40, 26, game.time * 10) }
   // player
-  if (game.state !== 'title' && P.lives > 0 && !(P.inv > 0 && Math.floor(P.inv * 12) % 2 === 0)) {
+  if (game.state !== 'title' && P.lives > 0) { // while invincible the hero blinks half see-through (never gone)
+    const ha = P.inv > 0 && Math.floor(P.inv * 12) % 2 === 0 ? 0.45 : 1
     X.fillStyle = 'rgba(20,10,40,0.25)'; X.beginPath(); X.ellipse(P.x + 14, P.y + 56, 34, 11, 0, 0, 7); X.fill()
     if (P.guard) { X.save(); X.globalCompositeOperation = 'lighter'; glow('#8fd0ff', P.x, P.y, 90); X.restore() }
-    sprite('hero_' + P.hero, P.x, P.y, 124, Math.sin(game.time * 3) * 0.04)
+    sprite('hero_' + P.hero, P.x, P.y, 124, Math.sin(game.time * 3) * 0.04, ha)
   }
   // enemy bullets
   X.save(); X.globalCompositeOperation = 'lighter'; for (const b of ebul) glow(b.boss ? '#ff40e0' : '#ff4f6a', b.x, b.y, (b.r + 4) * 2.4); X.restore() // a hot halo so bullets stand out on the dark graveyard
@@ -606,8 +763,10 @@ function draw() {
   for (const n of nums) { X.font = `900 ${n.crit ? 26 : 18}px ${FONT}`; X.globalAlpha = 1 - n.t / 0.7; X.strokeStyle = '#2a1d55'; X.lineWidth = 5; X.strokeText(n.v, n.x, n.y); X.fillStyle = n.crit ? '#ffd34d' : '#fff'; X.fillText(n.v, n.x, n.y) }
   X.globalAlpha = 1
   if (game.flash > 0) { X.fillStyle = `rgba(255,80,90,${game.flash})`; X.fillRect(0, 0, W, H) }
-  if (game.state !== 'title' && !Q.has('cover')) hud() // ?cover: the play picture for the portal covers (tools/cover.py)
+  storyDraw()
+  if (game.state !== 'title' && game.state !== 'twist' && !Q.has('cover')) hud() // ?cover: the play picture for the portal covers (tools/cover.py)
   X.restore()
+  if (game.wantSnap) takeSnap(game.wantSnap, ox, oy, scale)
 }
 function hud() {
   // lives as little hero faces
@@ -631,7 +790,7 @@ function hud() {
     const b = game.banner, a = b.t < 0.2 ? b.t / 0.2 : b.t > 1.4 ? (1.8 - b.t) / 0.4 : 1, s = 1 + (b.t < 0.2 ? (0.2 - b.t) * 2 : 0)
     X.save(); X.globalAlpha = a; X.translate(W / 2, H * 0.38); X.scale(s, s); X.font = `900 58px ${FONT}`; X.lineWidth = 10; X.strokeText(b.text, 0, 0); X.fillStyle = b.col; X.fillText(b.text, 0, 0); X.restore()
   }
-  if (game.hint > 0) { X.globalAlpha = clamp(game.hint, 0, 1); X.font = `800 24px ${FONT}`; X.lineWidth = 6; const s = navigator.maxTouchPoints > 0 || matchMedia('(pointer:coarse)').matches ? t('drag') : t('mouse'); X.strokeText(s, W / 2, H * 0.9); X.fillStyle = '#fff'; X.fillText(s, W / 2, H * 0.9); X.globalAlpha = 1 }
+  if (game.hint > 0) { X.globalAlpha = clamp(game.hint, 0, 1); X.font = `800 24px ${FONT}`; X.lineWidth = 6; const s = navigator.maxTouchPoints > 0 || matchMedia('(pointer:coarse)').matches ? t('drag') : t('mouse'); X.strokeText(s, W / 2, H * 0.68); X.fillStyle = '#fff'; X.fillText(s, W / 2, H * 0.68); X.globalAlpha = 1 } // above the hero: the bottom corners hold the backup and special buttons
 }
 
 // ---------------------------------------------------------------- input: drag moves the hero by the finger's motion, keys too
@@ -645,7 +804,7 @@ const input = {
     P.x = clamp(P.x, 30, W - 30); P.y = clamp(P.y, 120, H - 60)
   },
 }
-C.addEventListener('pointerdown', (e) => { if (game.state !== 'run' || e.button === 2) return; input.down = true; [input.px, input.py] = input.toField(e); game.hint = Math.min(game.hint, 0.4) })
+C.addEventListener('pointerdown', (e) => { if (game.state === 'twist' && game.tw.t > 2) { endTwist(); return } if (game.state !== 'run' || e.button === 2) return; input.down = true; [input.px, input.py] = input.toField(e); game.hint = Math.min(game.hint, 0.4) })
 addEventListener('pointermove', (e) => {
   if (game.state !== 'run') return
   const [x, y] = input.toField(e)
@@ -694,7 +853,16 @@ function heroList() {
   $('heroInfo').textContent = t('w_' + save.hero)
   $('goldN').textContent = save.gold.toLocaleString('en-US')
   skyRow()
+  renderLobby(); fitShop(); requestAnimationFrame(fitShop)
   $('shopBtn').classList.toggle('dot', META.some((m) => mLv(m.id) < m.max && save.gold >= metaCost(m)) || HEROES.some((h) => !save.owned.includes(h) && save.gold >= HERO_COST[h]))
+}
+// the upgrades label shrinks until it fits beside the icon and clear of the red dot (ru, fr, tr on a 360-wide phone)
+function fitShop() {
+  const e = $('shopTx'); e.style.fontSize = ''; let f = parseFloat(getComputedStyle(e).fontSize) || 17; while (e.scrollWidth > e.clientWidth + 1 && f > 11) e.style.fontSize = --f + 'px'
+  for (const n of document.querySelectorAll('#heroes .hero>span:not(.price)')) { // long hero names (de, tr) shrink inside their card
+    n.style.fontSize = ''; let s = parseFloat(getComputedStyle(n).fontSize) || 13; const box = n.parentNode.clientWidth - 8
+    while ((n.scrollWidth > box || n.getBoundingClientRect().height > s * 2.3) && s > 9) n.style.fontSize = --s + 'px'
+  }
 }
 function skyRow() {
   const max = save.skyMax || 1; save.sky = clamp(save.sky || 1, 1, max)
@@ -717,15 +885,33 @@ function shopPanel() {
   }
   show('shop')
 }
+// music / sfx as sliders: the value changes while dragging (settings and the pause screen both use these)
+function soundRows(rows) {
+  for (const k of ['music', 'sfx']) {
+    const r = document.createElement('div'); r.className = 'row'; r.innerHTML = `<span>${t(k)}</span>`
+    const box = document.createElement('label'); box.className = 'vol'
+    const s = document.createElement('input'); s.type = 'range'; s.min = 0; s.max = 100; s.step = 5; s.value = Math.round(save[k] * 100)
+    const n = document.createElement('b'); n.textContent = s.value
+    s.oninput = () => { save[k] = s.value / 100; n.textContent = s.value; audio.apply() }
+    s.onchange = () => { store(); if (k === 'sfx') audio.play('click') }
+    box.append(s, n); r.appendChild(box); rows.appendChild(r)
+  }
+}
 function settingsPanel() {
-  const rows = $('sRows'); rows.innerHTML = ''
+  const box = $('sRows'); box.innerHTML = ''
+  const rows = document.createElement('div'), right = document.createElement('div'); rows.className = right.className = 'sCol'; box.append(rows, right) // side by side on short screens
   const row = (label, value, fn) => { const r = document.createElement('div'); r.className = 'row'; r.innerHTML = `<span>${label}</span>`; const b = document.createElement('button'); b.textContent = value; b.onclick = () => { fn(); audio.play('click'); settingsPanel() }; r.appendChild(b); rows.appendChild(r) }
-  const vol = (v) => `${Math.round(v * 100)}%`, nextVol = (v) => (v >= 1 ? 0 : Math.round((v + 0.2) * 10) / 10)
-  row(t('music'), vol(save.music), () => { save.music = nextVol(save.music); store(); audio.apply() })
-  row(t('sfx'), vol(save.sfx), () => { save.sfx = nextVol(save.sfx); store(); audio.apply() })
+  soundRows(rows)
   row(t('shake'), save.shake ? t('on') : t('off'), () => { save.shake = !save.shake; store() })
   row(t('nums'), save.nums ? t('on') : t('off'), () => { save.nums = !save.nums; store() })
-  row(t('lang'), LANG_NAMES[lang], () => { lang = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]; save.lang = lang; store(); texts(); $('sTitle').textContent = t('settings'); $('sClose').textContent = t('close') })
+  const lr = document.createElement('div'); lr.className = 'row'; lr.innerHTML = `<span>${t('lang')}</span>`; right.appendChild(lr)
+  const grid = document.createElement('div'); grid.className = 'langs'
+  for (const L of LANGS) {
+    const b = document.createElement('button'); b.textContent = LANG_NAMES[L]; b.style.fontFamily = fontFor(L); if (L === lang) b.className = 'on'
+    b.onclick = () => { if (L === lang) return; lang = L; save.lang = lang; store(); texts(); $('sTitle').textContent = t('settings'); $('sClose').textContent = t('close'); audio.play('click'); settingsPanel() }
+    grid.appendChild(b)
+  }
+  right.appendChild(grid)
   show('panel')
 }
 function startRun() {
@@ -737,7 +923,7 @@ function startRun() {
 function finish(won) {
   if (game.state === 'over') return
   game.levelAt[game.wave] = game.level
-  game.state = 'over'; runs++; hide('pauseBtn'); hide('superBtn'); platform.msg('gameplay_stopped')
+  game.state = 'over'; runs++; hide('pauseBtn'); hide('superBtn'); hide('helpBtn'); helpShown = false; helpG = -1; platform.msg('gameplay_stopped')
   const reached = won ? 15 : game.wave
   if (won) game.gold += 200
   const opened = !SIM && won && game.sky >= (save.skyMax || 1); if (opened) { save.skyMax = game.sky + 1; save.sky = game.sky + 1 }
@@ -745,6 +931,7 @@ function finish(won) {
   const earned = Math.round(game.gold * (1 + 0.1 * mLv('greed')) * skyGold()); save.gold += earned
   $('oGold').textContent = '+' + earned.toLocaleString('en-US')
   save.best = Math.max(save.best, game.score); save.bestWave[P.hero] = Math.max(save.bestWave[P.hero] || 0, reached); store()
+  if (!SIM) { platform.setScore('best_score', Math.round(game.score)); if (won && (save.skyMax || 1) > 1) platform.setScore('sky_highest', save.skyMax - 1); delete boardCache[0]; delete boardCache[1] } // the lobby asks again
   $('oTitle').textContent = won ? t('cleared') : t('over')
   $('oWaveL').textContent = t('reached'); $('oWave').textContent = `${reached} / 15`
   $('oKillL').textContent = t('kills'); $('oKill').textContent = game.kills.toLocaleString('en-US')
@@ -758,9 +945,9 @@ function finish(won) {
   window.__runs = (window.__runs || []).concat([{ hero: P.hero, wave: reached, level: game.level, kills: game.kills, score: game.score, won, hitBy: game.hitBy, sky: game.sky, bosses: game.bossN, gold: earned, time: Math.round(game.time), levelAt: game.levelAt, hitAt: game.hitAt, bossT: game.bossT, cards: { ...up } }])
 }
 function togglePause() {
-  if (game.state === 'run') { game.state = 'paused'; show('pause') } else if (game.state === 'paused') { hide('pause'); game.state = 'run' }
+  if (game.state === 'run') { game.state = 'paused'; const pr = $('pRows'); pr.innerHTML = ''; soundRows(pr); show('pause') } else if (game.state === 'paused') { platform.paused = false; audio.apply(); hide('pause'); game.state = 'run' }
 }
-function goHome() { hide('shop'); hide('superBtn'); game.state = 'title'; foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; game.wave = 1; hide('over'); hide('pause'); hide('pauseBtn'); show('title'); heroList() }
+function goHome() { hide('shop'); hide('superBtn'); hide('helpBtn'); helpShown = false; helpG = -1; game.state = 'title'; foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; game.wave = 1; hide('over'); hide('pause'); hide('pauseBtn'); show('title'); heroList() }
 $('playBtn').onclick = () => { audio.play('click'); startRun() }
 $('againBtn').onclick = () => platform.interstitial(startRun)
 $('homeBtn').onclick = () => platform.interstitial(goHome)
@@ -768,6 +955,7 @@ $('pHomeBtn').onclick = () => { hide('pause'); game.state = 'run'; finish(false)
 $('resumeBtn').onclick = togglePause
 $('pauseBtn').onclick = togglePause
 $('superBtn').addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); useSuper() })
+$('helpBtn').addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); askHelp() })
 addEventListener('contextmenu', (e) => e.preventDefault())
 C.addEventListener('pointerdown', (e) => { if (e.button === 2) useSuper() })
 $('setBtn').onclick = () => settingsPanel()
@@ -783,19 +971,64 @@ document.addEventListener('visibilitychange', () => { audio.apply(); if (documen
 function resize() { const d = Math.min(2, devicePixelRatio || 1); C.width = Math.round(innerWidth * d); C.height = Math.round(innerHeight * d); H = clamp(Math.round(W * innerHeight / innerWidth), 900, 1170)
   const sc = Math.min(innerWidth / W, innerHeight / H), u = $('ui').style // buttons and screens sit on the playfield, not the far screen edge
   const wide = innerWidth > innerHeight * 1.15 // landscape: menus use the whole window, the field is too narrow for them
-  document.body.classList.toggle('wide', wide)
+  document.body.classList.toggle('wide', wide); if (typeof fitShop === 'function') requestAnimationFrame(fitShop)
   $('superBtn').style.right = wide ? (innerWidth - W * sc) / 2 + 12 + 'px' : ''
+  $('helpBtn').style.left = wide ? (innerWidth - W * sc) / 2 + 12 + 'px' : ''
   $('pauseBtn').style.right = wide ? (innerWidth - W * sc) / 2 + 12 + 'px' : '' // in a run the pause button stays on the field's corner
   if (wide) { u.left = u.top = '0px'; u.width = innerWidth + 'px'; u.height = innerHeight + 'px' } else { u.left = (innerWidth - W * sc) / 2 + 'px'; u.top = (innerHeight - H * sc) / 2 + 'px'; u.width = W * sc + 'px'; u.height = H * sc + 'px' } }
 addEventListener('resize', resize); resize()
+let renderClock = 0
+const soundLog = []
 function frame(now) {
+  if (RENDER) return // stepped by __render
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now
   audio.music(trackNow())
   if (game.state === 'run') { tick(dt); if (game.hint > 0) game.hint -= dt * 0.5 }
+  else if (game.state === 'twist') twistTick(dt)
   else if (game.state === 'title') { game.time += dt; game.scroll += dt * 60; updateDecos(dt) }
   draw()
   requestAnimationFrame(frame)
 }
+// ---------------------------------------------------------------- lobby board (PLAYBOOK 13, 2026-11-10 사용자 "순위표는 항상 대기실에 표현하자", "ai랑 걸프는 sky도")
+// Always open on the title screen where the portal has an in-game board: 1-10 + my line at the right on wide screens,
+// 3 + my line on an upright phone with a button for all 10. native_popup: a cup button opens the portal's window. No board: nothing.
+const BOARDS = ['best_score', 'sky_highest']
+const boardCache = {}
+function boardRows(tab) {
+  const c = boardCache[tab]; if (c && performance.now() - c.at < 60000) return c.ask
+  let ask; try { ask = Promise.resolve(window.bridge.leaderboards.getEntries(BOARDS[tab])) } catch { ask = Promise.reject(new Error('no board')) }
+  boardCache[tab] = { at: performance.now(), ask }; ask.catch(() => { delete boardCache[tab] })
+  return ask
+}
+const boardFmt = (tab, v) => tab ? t('sky').replace('#', Math.round(v)) : Math.round(v).toLocaleString('en-US')
+const boardLine = (rank, name, score, me) => { const li = document.createElement('li'); if (me) li.className = 'me'; li.innerHTML = '<i></i><span></span><b></b>'; li.children[0].textContent = rank; li.children[1].textContent = name; li.children[2].textContent = score; return li }
+function boardMine(tab, all) { // my rank when the board sends it, my best from this device otherwise, '—' with no record yet
+  let me; try { const pid = window.bridge.player?.id; me = pid != null && (all || []).find((r) => String(r.id) === String(pid)) } catch {}
+  const local = tab ? (save.skyMax || 1) - 1 : save.best
+  return boardLine(me?.rank ?? '—', t('me'), me ? boardFmt(tab, +me.score || 0) : local ? boardFmt(tab, local) : '—', true)
+}
+const lobby = { tab: 0, open: false }
+function renderLobby() {
+  const type = platform.boardType()
+  $('lobbyRank').classList.toggle('hide', type !== 'in_game'); $('rankBtn').classList.toggle('hide', type !== 'native_popup')
+  if (type !== 'in_game') return
+  $('lobbyTitle').textContent = t('rank')
+  const tabs = $('lobbyTabs'); tabs.innerHTML = ''
+  ;[t('best'), t('skyTop')].forEach((name, i) => { const b = document.createElement('button'); b.className = i === lobby.tab ? 'on' : ''; b.textContent = name; b.onclick = () => { audio.play('click'); lobby.tab = i; renderLobby() }; tabs.appendChild(b) })
+  $('lobbyRank').classList.toggle('open', lobby.open)
+  const list = $('lobbyList'), mine = $('lobbyMe'), tab = lobby.tab
+  list.innerHTML = '<li class="none">...</li>'; $('lobbyRank').dataset.me = ''; mine.replaceChildren(boardMine(tab, []))
+  boardRows(tab).then((all) => {
+    if (tab !== lobby.tab) return
+    const rows = (all || []).slice(0, 10); let pid = null; try { pid = window.bridge.player?.id } catch {}
+    const at = pid == null ? -1 : rows.findIndex((r) => String(r.id) === String(pid)) // I am in the top 10: that row is mine (yellow, "(me)"), the extra line goes (11-10: "이게 내이름이야?")
+    list.replaceChildren(...(rows.length ? rows.map((r, i) => boardLine(r.rank ?? '', (r.name || '?') + (i === at ? ` (${t('me')})` : ''), boardFmt(tab, +r.score || 0), i === at)) : [boardLine('', '—', '')]))
+    $('lobbyRank').dataset.me = at < 0 ? '' : at < 3 ? '3' : '10'
+    mine.replaceChildren(boardMine(tab, all))
+  }).catch(() => { list.replaceChildren(boardLine('', '—', '')) })
+}
+$('lobbyMore').onclick = () => { audio.play('click'); lobby.open = !lobby.open; $('lobbyRank').classList.toggle('open', lobby.open) }
+$('rankBtn').onclick = () => { audio.play('click'); try { window.bridge.leaderboards.showNativePopup(BOARDS[lobby.tab])?.catch?.(() => {}) } catch {} }
 async function boot() {
   await platform.init()
   await readSave()
@@ -808,7 +1041,7 @@ async function boot() {
   texts(); initDecos(); requestAnimationFrame(frame); platform.banner(true)
   await loaded
   platform.msg('game_ready')
-  if (BOT && !SIM) setTimeout(startRun, 300)
+  if (BOT && !SIM && !RENDER) setTimeout(startRun, 300)
 }
 boot()
 // balance tools: damage per second on a row of still dummies, and whole runs played by the test pilot without drawing
@@ -826,4 +1059,8 @@ function simRun(hero, maxSecs = 900) {
   return window.__runs[window.__runs.length - 1]
 }
 if (BOT && HEROES.includes(Q.get('hero'))) save.hero = P.hero = Q.get('hero')
-if (BOT || Q.has('debug')) window.__sh = { game, P, save, audio, platform, startRun, useSuper, cardPool, get upRaw() { return up }, set upRaw(v) { up = v }, openCards, goHome, finish, shopPanel, heroList, settings: settingsPanel, measureDps, simRun, HEROES, CARDS, get foes() { return foes }, get up() { return up } }
+if (RENDER) window.__render = {
+  soundLog,
+  step(n, ticks = 2) { for (let i = 0; i < n; i++) { for (let j = 0; j < ticks; j++) { if (game.state === 'run') tick(1 / 60); else if (game.state === 'twist') twistTick(1 / 60); renderClock += 1 / 60 } } draw(); return { state: game.state, wave: game.wave, boss: game.bossOn, clock: renderClock, foes: foes.length } },
+}
+if (BOT || Q.has('debug') || RENDER) window.__sh = { renderLobby, t, game, P, save, audio, platform, callHelp, startTwist, endTwist, startRun, useSuper, cardPool, get upRaw() { return up }, set upRaw(v) { up = v }, openCards, goHome, finish, shopPanel, heroList, settings: settingsPanel, measureDps, simRun, HEROES, CARDS, get foes() { return foes }, get up() { return up } }

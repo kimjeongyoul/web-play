@@ -280,7 +280,7 @@ html,body,button,.ui,.ov,#tut{touch-action:manipulation;-webkit-user-select:none
 
 <script src="vendor/three.min.js"></script>
 <script>
-window.PORTAL=false; /* tools/package.py sets true: the portal build ignores every address option */
+window.PORTAL=true; /* tools/package.py sets true: the portal build ignores every address option */
 window.__start=function(){
 'use strict';
 const $=id=>document.getElementById(id);
@@ -465,7 +465,7 @@ function adState(kind,st){
   else if(st==='opened'){ADS.open=true;auMute(true);clearTimeout(ADS.otm);ADS.otm=setTimeout(()=>{ADS.open=false;auMute(false);adEnd(kind);},TUNE('admax',90)*1000);
     if(ADS.busy&&ADS.kind===kind)clearTimeout(ADS.tm);}
   else if(st==='rewarded'){if(ADS.busy&&ADS.kind==='rew'&&kind==='rew')ADS.got=true;}
-  else if(st==='closed'||st==='failed'){ADS.open=false;clearTimeout(ADS.otm);auMute(false);adEnd(kind);}
+  else if(st==='closed'||st==='failed'){ADS.open=false;ADS.pp=false;clearTimeout(ADS.otm);auMute(false);adEnd(kind);} /* 11-28: the portal may never lift the pause it sent for the ad */
 }
 function adEnd(kind){
   if(!ADS.busy||ADS.kind!==kind)return;
@@ -1957,7 +1957,7 @@ on('lsClose',()=>{show('lst',false);renderTitle();});
 on('rk0',()=>{RK.tab=0;renderRank();});on('rk1',()=>{RK.tab=1;renderRank();});
 on('rkMore',()=>{RK.open=!RK.open;renderRank();});
 on('bPause',()=>{if(!playing())return;G.menu=true;show('pause',true);});
-on('pResume',()=>{G.menu=false;show('pause',false);});
+on('pResume',()=>{G.menu=false;ADS.pp=false;auMute(ADS.quiet);show('pause',false);});
 on('pSet',()=>{show('pause',false);updSet();show('set',true);});
 on('pHome',()=>{G.menu=false;adMsg('gameplay_stopped');newRun(true);});
 on('inOk',closeIntro);
@@ -2029,7 +2029,7 @@ canvas.addEventListener('wheel',e=>{e.preventDefault();zoomBy(1+clamp(e.deltaY,-
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{
   auInit();if(!G||G.state==='title'||TUT.on)return;
-  if(e.key==='p'||e.key==='P'||(e.key==='Escape'&&!G.selTower)){if($('pause').classList.contains('show')){G.menu=false;show('pause',false);}else if(playing()&&!G.menu&&!G.pop){G.menu=true;show('pause',true);}return;}
+  if(e.key==='p'||e.key==='P'||(e.key==='Escape'&&!G.selTower)){if($('pause').classList.contains('show')){G.menu=false;ADS.pp=false;auMute(ADS.quiet);show('pause',false);}else if(playing()&&!G.menu&&!G.pop){G.menu=true;show('pause',true);}return;}
   if(G.menu||G.pop)return;
   const i='123456789'.indexOf(e.key);
   if(i>=0&&RUN.avail[i]){G.sel=RUN.avail[i];G.selTower=null;}

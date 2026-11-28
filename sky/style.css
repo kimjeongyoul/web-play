@@ -27,7 +27,14 @@ button.corner{position:absolute;top:max(12px,env(safe-area-inset-top));right:12p
 @keyframes pop{from{transform:scale(.6) translateY(30px);opacity:0}}
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px 22px;font-size:20px;-webkit-text-stroke:4px #2a1d55;paint-order:stroke fill}
 .stats div{display:flex;flex-direction:column}.stats b{font-size:32px}
-#sRows{display:flex;flex-direction:column;gap:10px;min-width:280px}
+#sRows,#pRows,.sCol{display:flex;flex-direction:column;gap:10px;min-width:280px}
+#pRows{margin-bottom:6px;background:rgba(26,18,60,.88);border:3px solid #2a1d55;border-radius:18px;padding:12px 16px;box-shadow:0 6px 0 rgba(0,0,0,.25)}
+.vol{display:flex;align-items:center;gap:8px}
+.vol input{width:150px;height:36px;accent-color:#ffcf3f;cursor:pointer}
+.vol b{min-width:34px;text-align:right;font-size:18px}
+.langs{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.langs button{min-height:44px;font-size:17px;-webkit-text-stroke:0;padding:4px 6px}
+.langs button.on{background:#ffcf3f;color:#2a1d55;box-shadow:0 0 0 3px #fff inset}
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:20px;font-weight:700;-webkit-text-stroke:4px #2a1d55;paint-order:stroke fill}
 .row button{min-width:110px;font-size:18px;min-height:48px;-webkit-text-stroke:0}
 @media (max-height:620px){#heroes{grid-template-columns:repeat(3,80px)}.hero{width:80px;height:86px}.hero img{width:56px;height:56px}.card{min-height:170px}}
@@ -95,7 +102,8 @@ button{min-height:48px}
 .urow{padding:4px 8px}.urow>img{width:44px;height:44px}
 .earn b{font-size:32px}.earn b img{width:36px;height:36px}
 }
-@media (max-height:620px){#shop .chip{position:absolute;top:10px;left:12px}}
+@media (max-height:620px){#shop .chip{position:absolute;top:10px;left:12px}
+#sRows{flex-direction:row;align-items:flex-start;gap:22px}.sCol{gap:6px;min-width:0}.langs{grid-template-columns:repeat(3,1fr)}.langs button{min-height:44px;font-size:15px}}
 
 #superBtn{position:absolute;right:12px;bottom:calc(46px + env(safe-area-inset-bottom));width:84px;height:84px;min-width:0;padding:0;border-radius:50%;background:#ffd34d;display:flex;align-items:center;justify-content:center;pointer-events:auto}
 #superBtn img{width:62px;height:62px}
@@ -113,3 +121,56 @@ button{min-height:48px}
 #skyRow button:disabled{opacity:.35}
 #oSky{font-size:24px;font-weight:900;color:#ffd34d;-webkit-text-stroke:5px #2a1d55;paint-order:stroke fill;min-height:0}
 #oSky:empty{display:none}
+#helpBtn{position:absolute;left:12px;bottom:calc(46px + env(safe-area-inset-bottom));width:84px;height:84px;min-width:0;padding:0;border-radius:50%;background:#8fe3ff;display:flex;align-items:center;justify-content:center;pointer-events:auto;animation:helpPulse 1s ease-in-out infinite}
+#helpBtn img{width:46px;height:46px;margin:0 -9px}
+#helpBtn img+img{margin-top:14px}
+#helpBtn i{position:absolute;left:-4px;top:-4px;padding:0 6px;height:26px;border-radius:13px;background:#ffd34d;color:#2a1d55;border:3px solid #2a1d55;font:900 14px/20px sans-serif;font-style:normal;box-sizing:border-box}
+@keyframes helpPulse{50%{transform:scale(1.08)}}
+#helpBtn.gauge{animation:none;background:radial-gradient(circle,#4a3f80 63%,transparent 64%),conic-gradient(#8fe3ff var(--g,0deg),#2a1d55 0)}
+#helpBtn.gauge img{filter:grayscale(.8) brightness(.75)}
+#helpBtn.gauge i{display:none}
+#helpBtn.gauge.full{animation:helpPulse 1s ease-in-out infinite;box-shadow:0 0 18px 4px #8fe3ff}
+#helpBtn.gauge.full img{filter:none}
+/* lobby board on the title screen (PLAYBOOK 13): upright phone = under the title, 3 rows + mine, a button opens all 10;
+   wide screens = right side, all 10 + mine (Megabonk's first screen); the menu moves left so nothing sits under it */
+.lobby{width:min(100%,420px);box-sizing:border-box;padding:6px 8px 5px;border-radius:16px;background:rgba(42,29,85,.88);border:3px solid #2a1d55;color:#fff;text-align:left;pointer-events:auto}
+.lobbyHead{display:flex;align-items:center;gap:8px}
+.lobbyHead b{font-size:17px;color:#ffd34d;white-space:nowrap}
+.lobbyTabs{display:flex;gap:6px;flex:1;min-width:0}
+.lobbyTabs button{flex:1;min-width:0;min-height:44px;padding:2px 6px;font-size:15px;line-height:1.1;border-width:3px;border-radius:12px;box-shadow:0 3px 0 #2a1d55;background:#cfc8ee;overflow-wrap:normal;hyphens:auto;-webkit-hyphens:auto}
+.lobbyTabs button.on{background:#ffd34d}
+.lobbyMore{flex:none;min-width:44px;width:44px;min-height:44px;padding:0;border-radius:12px;background:rgba(255,255,255,.16);border:0;box-shadow:none}
+.lobbyMore i{display:inline-block;width:12px;height:12px;border-right:3px solid #fff;border-bottom:3px solid #fff;transform:translateY(-3px) rotate(45deg)}
+.lobby.open .lobbyMore i{transform:translateY(3px) rotate(-135deg)}
+.lobbyList{list-style:none;margin:4px 0 0;padding:0}
+.lobbyList li{display:flex;align-items:center;gap:8px;padding:1px 8px;font-size:15px;line-height:22px;font-weight:700;border-bottom:1px solid rgba(255,255,255,.12)}
+.lobbyList li i{width:24px;font-style:normal;color:#ffd34d;text-align:right}
+.lobbyList li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lobbyList li.me{border:0;border-radius:10px;background:#ffd34d;color:#2a1d55}
+.lobbyList li.me i{color:#2a1d55}
+.lobbyList:not(.lobbyMe) li:nth-child(n+4){display:none}
+.lobby.open .lobbyList li:nth-child(n+4){display:flex}
+#rankBtn{right:80px}
+.lobby[data-me="3"] .lobbyMe,.lobby.open[data-me="10"] .lobbyMe,body.wide .lobby[data-me="10"] .lobbyMe{display:none}
+@media (max-height:700px){body:not(.wide) .lobby.open .lobbyList:not(.lobbyMe){max-height:118px;overflow-y:auto}body:not(.wide) #title:has(.lobby.open:not(.hide)) #heroInfo{display:none}}
+body.wide .lobby{position:absolute;right:14px;top:50%;transform:translateY(-50%);width:clamp(220px,25vw,330px)}
+body.wide .lobbyList:not(.lobbyMe) li:nth-child(n+4){display:flex}
+body.wide .lobbyMore{display:none}
+body.wide #title:has(#lobbyRank:not(.hide)){padding-right:calc(clamp(220px,25vw,330px) + 28px)}
+@media (max-height:500px){body.wide .lobby{top:calc(80px + env(safe-area-inset-top));transform:none;padding:4px 6px 3px}body.wide .lobbyList li{line-height:18px;font-size:13px}body.wide .lobbyHead b{display:none}body.wide .lobbyTabs button{font-size:13px}}
+/* upright phone with the board: a smaller title and hero cards; the open board folds the title and the weapon line away */
+body:not(.wide) #title:has(.lobby.open:not(.hide)) h1,body:not(.wide) #title:has(.lobby.open:not(.hide)) #heroInfo{display:none}
+@media (max-height:760px){body:not(.wide) #title:has(#lobbyRank:not(.hide)){gap:8px;padding-bottom:10px}body:not(.wide) #title:has(#lobbyRank:not(.hide)) h1{font-size:36px}body:not(.wide) #title:has(#lobbyRank:not(.hide)) #heroes{grid-template-columns:repeat(3,80px)}body:not(.wide) #title:has(#lobbyRank:not(.hide)) .hero{width:80px;height:86px}body:not(.wide) #title:has(#lobbyRank:not(.hide)) .hero img{width:56px;height:56px}}
+/* low, narrow landscape: six smaller hero cards fit left of the board */
+@media (max-height:500px) and (max-width:900px){body.wide #title:has(#lobbyRank:not(.hide)){padding-top:calc(66px + env(safe-area-inset-top));gap:6px}body.wide #title:has(#lobbyRank:not(.hide)) h1{font-size:38px}body.wide #title:has(#lobbyRank:not(.hide)) #heroes{grid-template-columns:repeat(6,58px);gap:6px}body.wide #title:has(#lobbyRank:not(.hide)) .hero{width:58px;height:66px;font-size:11px;border-width:3px;border-radius:14px}body.wide #title:has(#lobbyRank:not(.hide)) .hero img{width:42px;height:42px}body.wide #title:has(#lobbyRank:not(.hide)) .hero .lock{width:28px!important;height:28px!important;top:8px}body.wide #title:has(#lobbyRank:not(.hide)) .hero .price{font-size:12px}body.wide #title:has(#lobbyRank:not(.hide)) .hero .price img{width:16px!important;height:16px!important}}
+/* upright phone with the board: everything stays under the gold and settings chips; short screens drop the weapon line */
+body:not(.wide) #title:has(#lobbyRank:not(.hide)){padding-top:calc(76px + env(safe-area-inset-top))}
+@media (max-height:700px){body:not(.wide) #title:has(#lobbyRank:not(.hide)) #heroInfo{display:none}}
+@media (max-height:700px){body:not(.wide) #title:has(#lobbyRank:not(.hide)) #skyRow{font-size:19px;gap:6px;-webkit-text-stroke-width:4px}body:not(.wide) #title:has(#lobbyRank:not(.hide)) #skyRow button{min-width:48px;width:48px}}
+/* the red dot sits on the top-right corner: the label keeps clear of it (ru "Улучшения", fr, tr were under it) */
+#shopBtn{padding-right:22px}#shopTx{display:block;min-width:0;overflow:hidden;white-space:nowrap}
+@media (max-width:420px){#shopTx{font-size:15px}}
+@media (max-width:400px){body:not(.wide) .btns button.big{min-width:140px}body:not(.wide) .lobbyTabs button{font-size:13px;padding:2px 4px}}
+/* hero names stay inside their card (de "Feuermagier" on the small cards) */
+.hero>span:not(.price){max-width:calc(100% - 8px);line-height:1.05;overflow-wrap:normal}
+@media (max-height:760px){body:not(.wide) #title:has(#lobbyRank:not(.hide)) .hero>span:not(.price){font-size:12px}}

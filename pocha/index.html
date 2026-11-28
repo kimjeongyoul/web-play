@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Night Market Tycoon: Baekho Pocha</title>
-<link rel="stylesheet" href="style.css?v=6661a4f">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="loading"><div class="pic"></div><div class="band"><div class="bar"><i></i></div></div></div>
@@ -15,6 +15,8 @@
     <div id="street" class="pill"><span id="lamps"></span><b id="streetTxt">1/8</b></div>
   </div>
   <div id="goal" class="pill"></div>
+  <div id="boost" class="pill hide"></div>
+  <div id="perks"></div>
 </div>
 <canvas id="map" class="hide"></canvas>
 <div id="edge" class="hide"></div>
@@ -24,12 +26,14 @@
 <div id="stamp" class="hide"><b id="stampCity"></b><span id="stampSub"></span><small id="stampDate"></small></div>
 <div id="hint"></div>
 <div id="taste" class="hide"><img id="tasteImg" alt=""><div><b id="tasteName"></b><span id="tasteDesc"></span></div></div>
+<div id="pick" class="hide"><h3 id="pickTitle"></h3><div id="pickCards"></div></div>
 <div id="stick" class="hide"><div id="knob"></div></div>
 <section id="title" class="card">
   <h1 id="titleTxt"></h1>
   <p id="subTxt"></p>
   <div id="bestRow" class="row hide"><span id="bestLbl"></span><b id="bestTxt"></b></div>
-  <div id="cities" class="hide"></div>
+  <div id="titleSide"><div id="cities" class="hide"></div>
+  <div id="rankBox" class="hide"><div id="rankHead"></div><ol id="rankList"></ol><ol id="rankMe"></ol></div></div>
   <button id="startBtn"></button>
 </section>
 <section id="end" class="card postcard hide">
@@ -42,7 +46,7 @@
   <div id="records"><div><span id="recTimeLbl"></span><b id="recTimeTxt"></b><i id="recTimeNew"></i></div><div><span id="recServedLbl"></span><b id="recServedTxt"></b><i id="recServedNew"></i></div></div>
   <div id="tasted"><span id="tastedLbl"></span><div id="tastedImgs"></div></div>
   <div id="newBest" class="hide"></div>
-  <div id="fundRow" class="hide"><span id="fundLbl"></span><b id="fundTxt"></b><button id="fundBtn" class="hide"><i class="tv"></i><span id="fundBtnTxt"></span></button></div>
+  <div id="fundRow" class="hide"><span id="fundLbl"></span><b id="fundTxt"></b><button id="fundBtn" class="hide"><i class="tv"></i><span id="fundBtnTxt"></span></button><small id="fundWhy"></small></div>
   <button id="againBtn"></button>
   <small id="ticket"></small>
   <button id="homeBtn" class="sub"></button>

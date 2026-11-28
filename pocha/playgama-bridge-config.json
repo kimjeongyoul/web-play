@@ -11,6 +11,17 @@
 		"backfillId": ""
 	},
 	"payments": [],
-	"leaderboards": [],
+	"saas": {
+		"publicToken": "cmwghro270x98lk0hc5zybmeh",
+		"leaderboards": {
+			"platforms": ["playgama", "qa_tool"]
+		}
+	},
+	"leaderboards": [
+		{ "id": "served_seoul" },
+		{ "id": "served_tokyo" },
+		{ "id": "served_bangkok" },
+		{ "id": "served_taipei" }
+	],
 	"sendAnalyticsEvents": true
 }

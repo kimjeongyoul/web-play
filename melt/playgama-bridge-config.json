@@ -11,6 +11,22 @@
 		"backfillId": ""
 	},
 	"payments": [],
-	"leaderboards": [],
+	"saas": {
+		"publicToken": "cmw3030040jbyos0hr9tdzrrw",
+		"leaderboards": {
+			"platforms": [
+				"playgama",
+				"qa_tool"
+			]
+		}
+	},
+	"leaderboards": [
+		{
+			"id": "top_score"
+		},
+		{
+			"id": "landmark_fastest"
+		}
+	],
 	"sendAnalyticsEvents": true
 }

@@ -133,6 +133,9 @@ html, body { overscroll-behavior: none; -webkit-touch-callout: none; }
 #fundRow #fundBtn { width: auto; flex: none; margin: 0; min-height: 38px; padding: 4px 10px; display: flex; align-items: center; gap: 6px; font-size: 15px; background: linear-gradient(#7a4dff, #5a2fd8); color: #fff; box-shadow: 0 3px 0 #3a1a9a; }
 #fundBtn .tv { flex: none; width: 22px; height: 16px; border-radius: 4px; background: #fff; position: relative; }
 #fundBtn .tv::after { content: ''; position: absolute; left: 8px; top: 3px; border-left: 8px solid #5a2fd8; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+#fundRow { flex-wrap: wrap; row-gap: 0; }
+#fundWhy { flex: 0 0 100%; text-align: left; font-size: 13px; font-weight: 800; color: #8a5a2a; }
+#fundWhy:empty { display: none; }
 #ticket { display: block; margin-top: 4px; font-size: 13px; font-weight: 900; letter-spacing: 2px; opacity: .6; }
 #ticket:empty { display: none; }
 #cities { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 4px; }
@@ -168,3 +171,49 @@ html, body { overscroll-behavior: none; -webkit-touch-callout: none; }
 @keyframes loadbar { from { transform: translateX(-10%); } to { transform: translateX(160%); } }
 #loading.gone { opacity: 0; pointer-events: none; }
 @media (min-aspect-ratio: 1/1) { #loading .pic { background-image: url(img/loading_landscape.webp); background-size: contain; background-position: center; } }
+
+/* cards (one of three after each lamp), owned cards under the goal, the streamer's x2 */
+#boost { font-size: 16px; padding: 4px 12px; color: var(--ink); background: var(--gold); font-weight: 900; animation: pop .5s; }
+#perks { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+#perks span { font-size: 16px; line-height: 1; padding: 3px 7px 3px 5px; border-radius: 12px; background: rgba(24, 16, 48, .78); border: 2px solid var(--c); display: flex; align-items: center; gap: 2px; }
+#perks b { font-size: 12px; color: #fff; }
+#pick { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: rgba(10, 6, 24, .62); padding: 16px; }
+#pick h3 { margin: 0; font-size: 26px; font-weight: 900; color: var(--gold); text-shadow: 0 3px 0 var(--ink); }
+#pickCards { display: flex; gap: 10px; justify-content: center; width: min(560px, 100%); }
+#pickCards button { flex: 1 1 0; min-width: 0; max-width: 176px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px 10px; border-radius: 18px; border: 4px solid var(--c); background: #fffaf0; color: var(--ink); font: inherit; cursor: pointer; animation: pop .35s; box-shadow: 0 6px 0 rgba(0, 0, 0, .35); }
+#pickCards button:active { transform: translateY(3px); box-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
+#pickCards i { font-style: normal; font-size: 40px; line-height: 1.1; }
+#pickCards b { font-size: 17px; font-weight: 900; line-height: 1.15; text-align: center; word-break: keep-all; }
+#pickCards span { font-size: 14px; line-height: 1.25; text-align: center; color: #4a3f66; word-break: keep-all; }
+#pickCards small { font-size: 13px; font-weight: 900; color: #fff; background: var(--c); border-radius: 8px; padding: 1px 8px; }
+@media (max-width: 420px) { #pickCards { gap: 6px; } #pickCards button { padding: 10px 4px 8px; } #pickCards i { font-size: 32px; } #pickCards b { font-size: 15px; } #pickCards span { font-size: 12px; } }
+/* ranking on the title: top 5 of the chosen city, my line under it */
+#rankBox { margin: 10px 0 4px; padding: 8px 10px; border-radius: 14px; background: rgba(255, 255, 255, .07); }
+#rankHead { font-size: 14px; font-weight: 800; color: var(--gold); margin-bottom: 4px; text-align: left; }
+#rankBox ol { list-style: none; margin: 0; padding: 0; }
+#rankBox li { display: flex; gap: 8px; align-items: center; font-size: 14px; line-height: 1.75; }
+#rankBox li i { font-style: normal; width: 22px; text-align: center; font-weight: 900; color: #b9b3d6; }
+#rankBox li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+#rankBox li b { color: #fff; }
+#rankBox li.me { color: var(--gold); } #rankBox li.me b, #rankBox li.me i { color: var(--gold); }
+#rankBox li.none { color: #b9b3d6; justify-content: center; }
+#rankMe:not(:empty) { border-top: 1px dashed rgba(255, 255, 255, .25); margin-top: 3px; padding-top: 2px; }
+@media (orientation: landscape) and (max-height: 500px) { #rankBox li { line-height: 1.45; font-size: 13px; } }
+
+/* phone landscape: the title is too short for name + cities + ranking + start in one column. Two columns:
+   name, record and start on the left, the cities and the ranking on the right (only when there is something on the right) */
+@media (orientation: landscape) and (max-height: 500px) {
+  #title:has(#titleSide > :not(.hide)) { width: min(720px, calc(100vw - 32px)); display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; align-content: center; }
+  #title:has(#titleSide > :not(.hide)) > :not(#titleSide) { grid-column: 1; }
+  #title:has(#titleSide > :not(.hide)) #titleSide { grid-column: 2; grid-row: 1 / span 5; align-self: center; }
+  #titleSide #rankBox { margin: 6px 0 0; }
+  #titleSide #cities button.sub { min-height: 36px; }
+}
+/* phone landscape postcard: two columns that do not share rows (a tall travel-money box on the right used to stretch
+   the rows on the left and push the card into a scroll). A column flex that wraps; ::before forces the break. */
+@media (orientation: landscape) and (max-height: 500px) {
+  #end { display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; column-gap: 10px; height: calc(100vh - 24px); }
+  #end > * { width: calc(50% - 10px); box-sizing: border-box; order: 0; }
+  #end::before { content: ''; order: 1; flex-basis: 100%; width: 0; }
+  #end #records, #end #newBest, #end #fundRow, #end #againBtn, #end #ticket, #end #homeBtn { order: 2; }
+}

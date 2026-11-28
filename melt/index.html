@@ -5,26 +5,43 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>AI Invasion: Melt the World</title>
 <link rel="icon" href="data:,">
+<link rel="preload" as="image" href="img/loading_portrait.webp" fetchpriority="high" media="(max-aspect-ratio: 1/1)">
+<link rel="preload" as="image" href="img/loading_landscape.webp" fetchpriority="high" media="(min-aspect-ratio: 1/1)">
 <link rel="stylesheet" href="style.css">
+<!-- 11-21 (사용자 "ai 처음 들어오면 왜 느려"): the game files download together with Bridge, not one after another (14.6 s at 300 KB/s) -->
+<link rel="modulepreload" href="game.js">
+<link rel="preload" as="fetch" href="vendor/three.module.min.js.gz" crossorigin>
+<link rel="modulepreload" href="models.js">
+<link rel="preload" as="fetch" href="models.bin.gz" crossorigin>
 </head>
 <body>
 <canvas id="view"></canvas>
 
+<div id="talk" class="hide"><img src="img/baekho_face.webp" alt=""><p id="talkText"></p></div>
 <div id="loading"><div class="brand">AI<br>INVASION</div><div class="bar"><i id="loadbar"></i></div></div>
 
 <div id="hud" class="hide">
   <div class="time" id="time">60</div>
   <div class="score"><b id="score">0</b><small id="sizeText"></small></div>
-  <div class="eaten"><i id="eatenBar"></i><span id="eatenText"></span></div>
+  <div class="eaten" id="eaten"><i id="eatenBar"></i><span id="eatenText"></span></div>
   <button class="round" id="pauseBtn" aria-label="Pause"><span class="ico-pause"></span></button>
+  <button class="droneBtn hide" id="droneBtn"></button>
   <div class="combo" id="combo"></div>
   <div class="banner" id="banner"></div>
+  <div class="droneArrow hide" id="droneArrow"></div>
+  <div class="palFaces hide" id="palFaces"></div>
   <div class="hint" id="hint"></div>
+  <div class="goals hide" id="goals"></div>
+  <div class="goalCard" id="goalCard"></div>
+  <div class="goalPop" id="goalPop"></div>
+  <div class="fxChips" id="fxChips"></div>
 </div>
 <div id="float"></div>
 
 <section id="title" class="screen hide">
   <div class="logo">AI<br>INVASION<small>MELT THE WORLD</small></div>
+  <div class="lobbySlot" id="lobbySlot"><div id="lobbyRank" class="lobby hide"><div class="lobbyHead"><b id="lobbyTitle"></b><div class="lobbyTabs" id="lobbyTabs"></div><button class="lobbyMore" id="lobbyMore" aria-label="More"><i></i></button></div><ol class="lobbyList" id="lobbyList"></ol><ol class="lobbyList lobbyMe" id="lobbyMe"></ol></div></div>
+  <div class="worldMap" id="worldMap"></div>
   <div class="townPick">
     <button class="nav" id="prevTown">&lsaquo;</button>
     <div class="town"><b id="townName"></b><span class="stars" id="townStars"></span><small id="townLock"></small></div>
@@ -34,22 +51,36 @@
   <div class="row">
     <button class="sub" id="upBtn"></button>
     <button class="sub" id="skinBtn"></button>
+    <button class="round hide" id="titleRank" aria-label="Ranking"><span class="ico-cup"></span></button>
     <button class="round" id="setBtn" aria-label="Settings"><span class="ico-gear"></span></button>
   </div>
   <div class="gold"><span class="coin"></span><b id="goldTitle">0</b></div>
 </section>
 
+<section id="more" class="screen hide">
+  <div class="moreRing" id="moreRing"><button class="go ad" id="moreBtn"></button></div>
+  <button class="sub ghost" id="moreNo"></button>
+</section>
+
 <section id="result" class="screen hide">
-  <h2 id="resTitle"></h2>
+  <h2><span id="resTitle"></span><div class="resNext hide" id="resNext"><img id="resNextPic" alt=""><span class="lock"></span><b id="resNextName"></b></div></h2>
   <div class="stars big" id="resStars"></div>
   <div class="resLine"><span id="resEatenLabel"></span><b id="resEaten"></b></div>
+  <div class="resBar" id="resBar"><i class="fill"></i><i class="gap"></i><s style="left:50%"></s><s style="left:75%"></s><s style="left:95%"></s></div>
+  <div class="resGoals hide" id="resGoals"></div>
   <div class="resLine"><span id="resBestLabel"></span><b id="resBest"></b></div>
-  <div class="gain"><span class="coin"></span><b id="resGold">0</b></div>
+  <div class="gain"><span class="coin"></span><b id="resGold">0</b><div class="evo lvbar" id="resLv"><b id="resLvNum">1</b><span id="resLvText"></span><em id="resLvGain"></em><i></i></div></div>
+  <div class="gift hide" id="resGift"></div>
+  <div class="gift palGift hide" id="resPal"></div>
+  <div class="evo" id="resEvo"><img id="resEvoPic" alt=""><span id="resEvoText"></span><i></i></div>
+  <div class="evo charNext hide" id="resChar"><img id="resCharPic" alt=""><span id="resCharText"></span><i></i></div>
   <button class="sub ad" id="doubleBtn"></button>
   <div id="resUp" class="upgrades"></div>
   <button class="go" id="againBtn"></button>
-  <button class="sub ghost" id="homeBtn"></button>
+  <div class="resFoot"><button class="sub" id="homeBtn"></button><button class="round hide" id="rankBtn" aria-label="Ranking"><span class="ico-cup"></span></button></div>
 </section>
+
+<div id="reveal" class="hide"><div class="rays"></div><span id="revealTag"></span><img id="revealPic" alt=""><b id="revealName"></b><div class="talk" id="revealTalk"><p class="hq" id="revealHq"></p><p class="bot" id="revealBot"></p></div></div>
 
 <section id="panel" class="screen hide">
   <h2 id="panelTitle"></h2>
@@ -58,8 +89,17 @@
   <button class="go" id="panelClose"></button>
 </section>
 
+<section id="rank" class="screen hide">
+  <h2 id="rankTitle"></h2>
+  <div class="rankTabs" id="rankTabs"></div>
+  <ol class="rankList" id="rankList"></ol>
+  <ol class="rankList rankMe" id="rankMe"></ol>
+  <button class="go" id="rankClose"></button>
+</section>
+
 <section id="pause" class="screen hide">
   <h2 id="pauseTitle"></h2>
+  <div id="pauseOpts"></div>
   <button class="go" id="resumeBtn"></button>
   <button class="sub" id="quitBtn"></button>
 </section>
@@ -69,11 +109,13 @@
   var started = false
   function go() { if (started) return; started = true; var s = document.createElement('script'); s.type = 'module'; s.src = 'game.js'; document.body.appendChild(s) }
   if (/[?&]nobridge/.test(location.search)) { window.__noBridge = true; go(); return }
-  function local() { var s = document.createElement('script'); s.src = 'playgama-bridge.js'; s.onload = go; s.onerror = go; document.head.appendChild(s) }
+  // the copy the game uses: a CDN copy landing after the local one must not replace it (Sword Up 9b5c3f1: an uninitialised window.bridge)
+  var used = null
+  function local() { var s = document.createElement('script'); s.src = 'playgama-bridge.js'; s.onload = s.onerror = function () { used = window.bridge; go() }; document.head.appendChild(s) }
   var cdn = document.createElement('script'), done = false
-  var timer = setTimeout(function () { if (!done) { done = true; local() } }, 2000)
+  var timer = setTimeout(function () { if (!done) { done = true; local() } }, 5000)
   cdn.src = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
-  cdn.onload = function () { if (!done) { done = true; clearTimeout(timer); go() } }
+  cdn.onload = function () { if (used) { window.bridge = used; return } if (!done) { done = true; clearTimeout(timer); used = window.bridge; go() } }
   cdn.onerror = function () { if (!done) { done = true; clearTimeout(timer); local() } }
   document.head.appendChild(cdn)
 })()
