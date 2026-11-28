@@ -1246,6 +1246,9 @@ const canHelp = () => !game.helped && game.helpOffers < 2 && game.helpCool <= 0 
 const adsOk = () => (platform.ready && !window.bridge?.advertisement?.unavailable) || Q.has('fakead')
 // the in-run helper ad: not on CrazyGames (no ad button on the play screen, ads rules 11-18), there the full gauge calls the helper
 const adHelp = () => adsOk() && window.bridge?.platform?.id !== 'crazygames'
+// 11-28 user "다먹었는데도 다 안차보이지": from the neon town on, a whole map is worth less than the 3rd-star score,
+// so swallowing ALL_EAT of the map also gives the 3rd star and fills the bar
+const ALL_EAT = 0.95
 const FREE_FILL = 0.3 // of the one-star score
 function helpCheck(dt) {
   if (!adHelp()) {
@@ -1319,7 +1322,7 @@ function endRun(cleared) {
   audio.play('end'); audio.music('menu')
   const town = save.town, ratio = game.eaten / world.total, goal = THEMES[town].goal
   hide_('more'); helperOff(); $('helpRing').classList.add('hide')
-  const stars = (game.score >= goal * 0.5 ? 1 : 0) + (game.score >= goal ? 1 : 0) + (game.score >= goal * 1.8 ? 1 : 0)
+  const stars = (game.score >= goal * 0.5 ? 1 : 0) + (game.score >= goal ? 1 : 0) + (game.score >= goal * 1.8 || ratio >= ALL_EAT ? 1 : 0)
   // landmark: damage adds up over runs until it falls; a fallen one stands fresh each run (BALANCE.md '대표 건물')
   const hp = landHp(town), wasFallen = isFallen(town), before = wasFallen ? 0 : Math.min(save.dmg[town] || 0, hp)
   const fell = before + game.score >= hp, firstFall = fell && !wasFallen
@@ -2001,7 +2004,7 @@ function updateHud() {
   hudText('score', Math.round(game.score).toLocaleString('en-US'))
   hudText('sizeText', `${t('size')} ${size()}`)
   if (!game.goalFlash) goalHud()
-  const ratio = game.score / (THEMES[save.town].goal * 1.8)
+  const ratio = Math.max(game.score / (THEMES[save.town].goal * 1.8), game.eaten / world.total / ALL_EAT) // eating the whole map fills it too
   const bw = `${(clamp(ratio, 0, 1) * 100).toFixed(1)}%`; if ($('eatenBar').style.width !== bw) $('eatenBar').style.width = bw
   const goal = THEMES[save.town].goal, next = [goal * 0.5, goal, goal * 1.8].find((v) => v > game.score) ?? goal * 1.8
   hudText('eatenText', Math.round(next).toLocaleString('en-US'))
