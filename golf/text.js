@@ -11,6 +11,10 @@ export const TEXT = {
     next: 'NEXT HOLE', card: 'SCORECARD', newBest: 'NEW BEST!', hint: 'Drag back and let go', mulligan: 'Mulligan', noAd: 'No ad right now',
     roundDone: 'ROUND DONE', even: 'EVEN', skip: 'Tap to skip', hioCount: 'Hole in ones', m: 'm',
     h1: 'Sunny Start', h2: 'Twin Ponds', h3: 'Sandy Gulch', h4: 'Island Hop', h5: 'Dogleg Woods', h6: 'Bouncy Creek', h7: 'Frosty Peak', h8: 'Gate Crash', h9: 'Final Leap',
+    h10: 'Night Lights', h11: 'Blossom Bend', h12: 'Red Canyon', h13: 'Cliff Coast', h14: 'Glacier Slide', h15: 'Lava Lake', h16: 'Candy Hops', h17: 'Bamboo Gates', h18: 'Cloud Finale',
+    cfront: 'Front 9', cback: 'Back 9', cfull: '18 Holes', round: 'Full round', locked: 'Locked', lockBack: 'Clear the front 9 first', retry: 'Retry', map: 'Map',
+    r_front: 'Front 9 · Sunny Hills', r_back: 'Back 9 · Wild Lands', needHole: 'Clear hole {n}', newStars: 'More stars!', opened: 'Opened:', parForStar: 'Par or better for a star',
+    lieRough: 'Rough', lieSand: 'Bunker', lieIce: 'Ice', lava: 'SIZZLE +1', fall: 'FALL +1',
   },
   ko: {
     play: '티오프', again: '한 판 더', home: '처음으로', settings: '설정', close: '닫기', paused: '일시정지', resume: '계속', quit: '라운드 끝내기',
@@ -22,5 +26,9 @@ export const TEXT = {
     next: '다음 홀', card: '스코어카드', newBest: '신기록!', hint: '뒤로 당겼다 놓기', mulligan: '멀리건', noAd: '지금은 광고가 없어요',
     roundDone: '라운드 끝', even: '이븐', skip: '눌러서 넘기기', hioCount: '홀인원', m: 'm',
     h1: '햇살 첫 홀', h2: '쌍둥이 연못', h3: '모래 협곡', h4: '섬 건너기', h5: '굽은 숲길', h6: '통통 개울', h7: '눈꽃 봉우리', h8: '문지기', h9: '마지막 도약',
+    h10: '밤빛 페어웨이', h11: '벚꽃 굽잇길', h12: '붉은 협곡', h13: '절벽 해안', h14: '빙하 미끄럼', h15: '용암 호수', h16: '사탕 통통', h17: '대나무 문', h18: '구름 피날레',
+    cfront: '전반 9홀', cback: '후반 9홀', cfull: '18홀', round: '라운드 돌기', locked: '잠김', lockBack: '전반 9홀을 먼저 깨요', retry: '다시', map: '지도',
+    r_front: '전반 9홀 · 햇살 언덕', r_back: '후반 9홀 · 거친 땅', needHole: '{n}번 홀 깨기', newStars: '별 더 땄다!', opened: '열림:', parForStar: '파 이하면 별',
+    lieRough: '러프', lieSand: '벙커', lieIce: '얼음', lava: '치익 +1', fall: '추락 +1',
   },
 }

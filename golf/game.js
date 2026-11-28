@@ -1,9 +1,9 @@
 // Bonk Golf: nine silly holes, one drag. Pull back = power + aim, let go = BONK.
-import * as THREE from './vendor/three.module.min.js?v=f308d7b'
-import { TEXT, LANGUAGES } from './text.js?v=f308d7b'
-import { HOLES, THEMES } from './holes.js?v=f308d7b'
-import { audio } from './sound.js?v=f308d7b'
-import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=f308d7b'
+import * as THREE from './vendor/three.module.min.js?v=7598094'
+import { TEXT, LANGUAGES } from './text.js?v=7598094'
+import { HOLES, THEMES } from './holes.js?v=7598094'
+import { audio } from './sound.js?v=7598094'
+import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=7598094'
 
 const Q = new URLSearchParams(location.search)
 const BUILD = '2026-11-28'
@@ -17,19 +17,43 @@ const ease = (t) => t * t * (3 - 2 * t)
 const seeded = (a) => () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
 
 // ---------------------------------------------------------------- save + text
-const save = { music: 0.6, sfx: 0.8, shake: 1, vib: 1, lang: '', best: 0, bestHoles: [0, 0, 0, 0, 0, 0, 0, 0, 0], runs: 0, hio: 0, hint: 0 }
+const save = { music: 0.6, sfx: 0.8, shake: 1, vib: 1, lang: '', best: 0, bestHoles: Array(18).fill(0), runs: 0, hio: 0, hint: 0, bestC: { front: 0, back: 0, full: 0 }, course: 'front', frontDone: 0, stars: [], cleared: [] }
 const SAVE_KEY = 'bonk_golf_v1'
 try { const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (raw && typeof raw === 'object') for (const k in save) if (typeof raw[k] === typeof save[k]) save[k] = raw[k] } catch {}
-if (!Array.isArray(save.bestHoles) || save.bestHoles.length !== 9) save.bestHoles = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+if (!Array.isArray(save.bestHoles)) save.bestHoles = []
+save.bestHoles = Array.from({ length: 18 }, (_, i) => Number(save.bestHoles[i]) || 0)
+// best per course; the old single best was the front nine. Finishing the front nine once opens the back nine.
+if (!save.bestC || typeof save.bestC !== 'object') save.bestC = {}
+for (const k of ['front', 'back', 'full']) save.bestC[k] = Number(save.bestC[k]) || 0
+if (!save.bestC.front && save.best) save.bestC.front = save.best
+if (save.bestC.front || save.bestC.full) save.frontDone = 1
+if (!['front', 'back', 'full'].includes(save.course)) save.course = 'front'
+for (const k of ['stars', 'cleared']) save[k] = Array.from({ length: HOLES.length }, (_, i) => Number(save[k]?.[i]) || 0)
+for (let i = 0; i < HOLES.length; i++) if (save.bestHoles[i]) save.cleared[i] = 1 // older saves: a hole with a best score was finished
 function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)) } catch {} }
 let lang = Q.get('lang') || save.lang || ((navigator.language || 'en').toLowerCase().startsWith('ko') ? 'ko' : 'en')
 if (!TEXT[lang]) lang = 'en'
 const t = (key) => TEXT[lang][key] ?? TEXT.en[key] ?? key
-const TOTAL_PAR = HOLES.reduce((s, h) => s + h.par, 0)
+// the three courses: [first hole index, last + 1]
+const COURSES = { front: [0, 9], back: [9, 18], full: [0, 18] }
+const courseHoles = (c) => HOLES.slice(COURSES[c][0], COURSES[c][1])
+const coursePar = (c) => courseHoles(c).reduce((s, h) => s + h.par, 0)
+// the stage map: regions of nine holes, each with its own look. A region opens when the hole before it is cleared and the
+// total stars reach need (BALANCE.md). Stars per hole: par 1, birdie 2, eagle or better (or a hole in one) 3.
+const REGIONS = [
+  { id: 'front', from: 0, to: 9, need: 0, bg: ['#5fc0ff', '#8fdc5a'] },
+  { id: 'back', from: 9, to: 18, need: 6, bg: ['#24306e', '#ff9ab8'] },
+]
+const regionOf = (i) => REGIONS.find((r) => i >= r.from && i < r.to) || REGIONS[0]
+const starsFor = (strokes, par) => strokes === 1 || strokes <= par - 2 ? 3 : strokes === par - 1 ? 2 : strokes === par ? 1 : 0
+const totalStars = () => save.stars.reduce((a, b) => a + b, 0)
+const regionOpen = (r) => r.from === 0 || (!!save.cleared[r.from - 1] && totalStars() >= r.need)
+const holeOpen = (i) => regionOpen(regionOf(i)) && (i === regionOf(i).from || !!save.cleared[i - 1])
+const backOpen = () => regionOpen(REGIONS[1])
 const vsPar = (d) => d === 0 ? t('even') : d > 0 ? `+${d}` : `${d}`
 
 // ---------------------------------------------------------------- portal (Playgama bridge)
-const game = { state: 'load', time: 0, hole: 0, phase: '', pt: 0, strokes: 0, scores: [], adHold: false, hitstop: 0, shake: 0, punch: 0, freeMull: true, mullUsed: false, canMull: false, lastBad: false }
+const game = { state: 'load', time: 0, hole: 0, course: 'front', first: 0, last: 9, single: false, phase: '', pt: 0, strokes: 0, scores: [], adHold: false, hitstop: 0, shake: 0, punch: 0, freeMull: true, mullUsed: false, canMull: false, lastBad: false }
 const platform = {
   ready: false, audioOn: true, paused: false, adOpen: false, adPending: false,
   message(name) { try { if (this.ready) window.bridge?.platform?.sendMessage(name) } catch {} },
@@ -72,7 +96,7 @@ const platform = {
   afterAd() { const next = this.adNext; this.adNext = null; clearTimeout(this.adWait); next?.() },
   // between holes (after the 3rd and 6th) and before a new round; never closer than 2.5 minutes; never in the first three holes of the first round
   interstitial(next) {
-    if (!this.ready || Date.now() - this.lastAd < 150000 || (save.runs < 1 && game.hole < 3 && game.state === 'run')) { next(); return }
+    if (!this.ready || Date.now() - this.lastAd < 150000 || (save.runs < 1 && game.hole - game.first < 3 && game.state === 'run')) { next(); return }
     this.lastAd = Date.now(); next(); game.adHold = true; this.adPending = true
     this.adNext = () => { game.adHold = false }
     this.adWait = setTimeout(() => { if (!this.adOpen) { this.clearAd(); this.afterAd() } }, 2500) // no ad came: go on
@@ -147,10 +171,10 @@ const cloth = new THREE.Mesh(flagGeo, basic(0xff4a4a, { side: THREE.DoubleSide }
 const knob = part(SPH, lam(0xffd23a), 0, 5.45, 0, 0.2); knob.scale.setScalar(0.16)
 flag.add(cupMesh, cupRim, pole, cloth, knob)
 
-// ---------------------------------------------------------------- the golfer: a round chibi kid in a cap and polo
+// ---------------------------------------------------------------- the golfer: a chibi kid (big head, small pear body) in a cap and polo
 // Local space: stands at x = GX facing +x (the ball is at the origin), the target is toward -z.
 // Toon look: three light steps (gradient map), a dark back-face outline of even thickness, a soft rim light so it reads on grass.
-const TOON_STEPS = new THREE.DataTexture(new Uint8Array([105, 190, 255]), 3, 1, THREE.RedFormat)
+const TOON_STEPS = new THREE.DataTexture(new Uint8Array([150, 210, 255]), 3, 1, THREE.RedFormat)
 TOON_STEPS.minFilter = TOON_STEPS.magFilter = THREE.NearestFilter; TOON_STEPS.needsUpdate = true
 const rimLight = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'float rimK = 1.0 - max(dot(normalize(vViewPosition), normal), 0.0);\noutgoingLight += vec3(1.0, 0.96, 0.86) * smoothstep(0.6, 0.95, rimK) * 0.3;\n#include <opaque_fragment>') }
 const toon = (color) => { const m = new THREE.MeshToonMaterial({ color, gradientMap: TOON_STEPS }); m.onBeforeCompile = rimLight; m.customProgramCacheKey = () => 'toonRim'; return m }
@@ -169,88 +193,94 @@ const softShadow = (() => { const cv = document.createElement('canvas'); cv.widt
 const gShadow = new THREE.Mesh(CIRCLE, basic(0x10301a, { map: softShadow, transparent: true, opacity: 0.85, depthWrite: false })); gShadow.scale.set(1.05, 1, 0.95); gShadow.position.set(GX + 0.05, 0.04, 0); golfer.add(gShadow)
 const gHips = new THREE.Group(); gBody.add(gHips) // turns a little with the swing
 const gTwist = new THREE.Group(); gBody.add(gTwist) // shoulders, head and arms: turn all the way
-const C_SKIN = 0xffd9bc, C_SHIRT = 0xffc83a, C_TRIM = 0x2f4fc4, C_SHORTS = 0x2f4fc4, C_CAP = 0xff4f4f, C_WHITE = 0xffffff, C_HAIR = 0x6a3e24
-const SKIN = toon(C_SKIN), SHIRT = toon(C_SHIRT), TRIM = toon(C_TRIM), SHORTS = toon(C_SHORTS), CAPM = toon(C_CAP), WHITE = toon(C_WHITE), HAIR = toon(C_HAIR), SOLE = toon(0xff4f4f)
-const METAL = toon(0xc9d3de), GRIPM = toon(0x2a2f3a), DARK = basic(0x241c2a), PINK = basic(0xff8f9a, { transparent: true, opacity: 0.75 })
+const C_SKIN = 0xffdcc6, C_SHIRT = 0x7cc8ff, C_SHORTS = 0x2d3a6e, C_CAP = 0xff6b5e, C_WHITE = 0xffffff, C_HAIR = 0x7a4a2a
+const SKIN = toon(C_SKIN), SHIRT = toon(C_SHIRT), SHORTS = toon(C_SHORTS), CAPM = toon(C_CAP), WHITE = toon(C_WHITE), HAIR = toon(C_HAIR), SOLE = toon(C_CAP)
+const METAL = toon(0xc9d3de), GRIPM = toon(0x2a2f3a), DARK = basic(0x2a1e30), IRIS = basic(0x5b3f8c), PINK = basic(0xff8f9a, { transparent: true, opacity: 0.55 })
+// head: an ellipsoid, the biggest part (1.12 wide; the body is 0.78). Eyes sit a bit below the middle, under the brim.
+const HEAD_R = 0.56, HEAD_K = [1, 0.94, 1.02], HEAD_Y = 1.62, EYE_Y = -0.12, EYE_Z = 0.17, BROW_Y = 0.06, MOUTH_Y = -0.34
 const face = { mood: 'idle', hold: 0, blink: 2.5, blinkT: 0, eye: 1, brow: 0, happy: 0 }
 {
-  // legs + shorts (hips)
-  gHips.add(tp(BALL, SHORTS, 0, 0.7, 0, 0.6, 0.38, 0.58))
-  for (const s of [-1, 1]) { const leg = new THREE.CapsuleGeometry(0.095, 0.2, 4, 14); gHips.add(tp(leg, SKIN, 0.05, 0.33, 0.27 * s, 1, 1, 1, 1, 0.095, 0.195, 0.095)) }
-  // shoes stay planted on the ground (body, not hips)
+  // short legs, round shorts (hips turn a little)
+  for (const s of [-1, 1]) { const leg = new THREE.CapsuleGeometry(0.085, 0.16, 4, 14); gHips.add(tp(leg, SKIN, 0.04, 0.32, 0.17 * s, 1, 1, 1, 1, 0.085, 0.165, 0.085)) }
+  gHips.add(tp(BALL, SHORTS, 0, 0.54, 0, 0.4, 0.2, 0.38))
+  // chunky shoes stay planted (body, not hips)
   for (const s of [-1, 1]) {
-    gBody.add(tp(CYL, WHITE, 0.06, 0.22, 0.28 * s, 0.11, 0.1, 0.11, 1, 0.11, 0.05, 0.11)) // sock
-    gBody.add(tp(CYL, TRIM, 0.06, 0.25, 0.28 * s, 0.113, 0.025, 0.113, 0)) // sock stripe
-    gBody.add(tp(BALL, SOLE, 0.13, 0.055, 0.29 * s, 0.3, 0.07, 0.19)) // sole
-    gBody.add(tp(BALL, WHITE, 0.12, 0.11, 0.29 * s, 0.27, 0.12, 0.17)) // shoe
-    gBody.add(tp(BALL, TRIM, 0.24, 0.15, 0.29 * s, 0.07, 0.035, 0.11, 0)) // laces
+    gBody.add(tp(CYL, WHITE, 0.05, 0.2, 0.17 * s, 0.095, 0.08, 0.095, 1, 0.095, 0.04, 0.095)) // sock
+    gBody.add(tp(BALL, SOLE, 0.1, 0.06, 0.18 * s, 0.27, 0.075, 0.165)) // sole
+    gBody.add(tp(BALL, WHITE, 0.09, 0.135, 0.18 * s, 0.25, 0.135, 0.155)) // shoe
+    gBody.add(tp(BALL, SHORTS, 0.24, 0.2, 0.18 * s, 0.06, 0.03, 0.085, 0)) // laces
   }
-  // polo shirt: belly, belt, collar, placket, buttons
-  gTwist.add(tp(BALL, SHIRT, 0, 1.02, 0, 0.62, 0.58, 0.6))
-  const belt = new THREE.Mesh(new THREE.TorusGeometry(1, 0.075, 8, 32), toon(0x5a3a22)); belt.rotation.x = Math.PI / 2; belt.scale.set(0.565, 0.545, 0.7); belt.position.y = 0.72; gTwist.add(belt)
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.065, 10, 36), WHITE); collar.rotation.x = Math.PI / 2; collar.scale.set(1, 1, 0.8); collar.position.set(0.02, 1.38, 0)
-  { const o = new THREE.Mesh(collar.geometry, OUT); o.scale.set(1.03, 1.03, 1.5); collar.add(o) } gTwist.add(collar)
-  for (const s of [-1, 1]) { const flap = tp(BALL, WHITE, 0.43, 1.31, 0.13 * s, 0.13, 0.04, 0.1, 1); flap.rotation.set(0.6 * s, 0, -1.0); gTwist.add(flap) }
-  gTwist.add(tp(BALL, WHITE, 0.56, 1.2, 0, 0.04, 0.12, 0.06, 0))
-  for (const [x, y] of [[0.585, 1.25], [0.6, 1.13]]) gTwist.add(tp(BALL, TRIM, x, y, 0, 0.022, 0.022, 0.022, 0))
-  // head: big and round (about 45% of the height), cap with brim, ears, hair at the back
-  const head = new THREE.Group(); head.position.set(0.06, 1.88, 0); gTwist.add(head); golfer.userData.head = head
-  head.add(tp(BALL, SKIN, 0, 0, 0, 0.58))
-  for (const s of [-1, 1]) head.add(tp(BALL, SKIN, -0.02, -0.04, 0.56 * s, 0.09, 0.12, 0.07))
-  for (const [x, y, z, r] of [[-0.42, -0.02, 0.18, 0.2], [-0.42, -0.02, -0.18, 0.2], [-0.3, -0.18, 0.36, 0.14], [-0.3, -0.18, -0.36, 0.14], [-0.5, -0.2, 0, 0.18]]) head.add(tp(BALL, HAIR, x, y, z, r, r, r, 1))
-  const dome = tp(new THREE.SphereGeometry(1, 36, 18, 0, Math.PI * 2, 0, Math.PI * 0.5), CAPM, 0, 0.19, 0, 0.6, 0.47, 0.6); head.add(dome)
-  const band = new THREE.Mesh(new THREE.TorusGeometry(0.615, 0.035, 8, 40), WHITE); band.rotation.x = Math.PI / 2; band.scale.setScalar(0.6 / 0.615); band.position.y = 0.19; head.add(band)
-  const brim = tp(new THREE.CylinderGeometry(1, 1, 1, 32, 1, false, Math.PI * 0.18, Math.PI * 0.64), CAPM, 0.14, 0.2, 0, 0.64, 0.05, 0.64, 1, 0.64, 0.025, 0.64); brim.rotation.z = 0.06; head.add(brim)
-  head.add(tp(BALL, WHITE, 0.47, 0.42, 0, 0.03, 0.1, 0.1, 0)) // cap badge
-  head.add(tp(BALL, CAPM, 0, 0.66, 0, 0.07, 0.05, 0.07, 1))  // top button
-  // face: big glossy eyes, brows, blush, mouths for each mood
-  const F = (y, z, r = 0.58) => Math.sqrt(Math.max(0, r * r - y * y - z * z))
+  // pear body in the polo: wide at the bottom, narrow at the neck
+  const prof = [[0, 0], [0.2, 0.005], [0.33, 0.05], [0.385, 0.14], [0.39, 0.24], [0.36, 0.34], [0.29, 0.43], [0.19, 0.5], [0.08, 0.535], [0, 0.54]].map(([r, y]) => new THREE.Vector2(r, y - 0.27))
+  gTwist.add(tp(new THREE.LatheGeometry(prof, 36), SHIRT, 0, 0.79, 0, 1, 1, 1, 1, 0.39, 0.27, 0.39))
+  // white collar ring at the neck gap, two flaps, buttons, a coral chest dot
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.05, 10, 32), WHITE); collar.rotation.x = Math.PI / 2; collar.position.set(0.01, 1.06, 0)
+  { const o = new THREE.Mesh(collar.geometry, OUT); o.scale.set(1.08, 1.08, 1.6); collar.add(o) } gTwist.add(collar)
+  for (const s of [-1, 1]) { const flap = tp(BALL, WHITE, 0.17, 1.02, 0.08 * s, 0.1, 0.035, 0.075, 1); flap.rotation.set(0.5 * s, 0, -0.9); gTwist.add(flap) }
+  for (const y of [0.96, 0.88]) gTwist.add(tp(BALL, WHITE, Math.sqrt(Math.max(0, 0.39 ** 2 - (y - 0.79) ** 2 * 1.6)) * 0.86 + 0.02, y, 0, 0.02, 0.02, 0.02, 0))
+  gTwist.add(tp(BALL, CAPM, 0.32, 0.9, 0.17, 0.02, 0.05, 0.05, 0))
+  // head
+  const head = new THREE.Group(); head.position.set(0.04, HEAD_Y, 0); gTwist.add(head); golfer.userData.head = head
+  head.add(tp(BALL, SKIN, 0, 0, 0, HEAD_R * HEAD_K[0], HEAD_R * HEAD_K[1], HEAD_R * HEAD_K[2]))
+  for (const s of [-1, 1]) head.add(tp(BALL, SKIN, -0.03, -0.08, 0.56 * s, 0.075, 0.1, 0.06))
+  // hair peeking out at the sides and the back under the cap
+  head.add(tp(BALL, HAIR, -0.12, 0.0, 0, 0.53, 0.44, 0.585)) // a bob: shows at the back and sides, the face covers its front
+  for (const s of [-1, 1]) head.add(tp(BALL, HAIR, -0.5, -0.26, 0.2 * s, 0.12, 0.1, 0.12, 1)) // two little flicks at the nape
+  // a small round cap with a brim that points forward, a white button and badge
+  head.add(tp(new THREE.SphereGeometry(1, 36, 18, 0, Math.PI * 2, 0, Math.PI * 0.5), CAPM, -0.02, 0.14, 0, 0.6, 0.42, 0.61))
+  const brim = tp(BALL, CAPM, 0.47, 0.15, 0, 0.36, 0.04, 0.42); brim.rotation.z = -0.14; head.add(brim)
+  head.add(tp(BALL, WHITE, -0.02, 0.56, 0, 0.06, 0.035, 0.06, 1))
+  head.add(tp(BALL, WHITE, 0.5, 0.33, 0, 0.025, 0.08, 0.1, 0))
+  // face on the ellipsoid: big tall eyes close together (dark, purple lower half, two shines), brows, blush, mouths for each mood
+  const F = (y, z) => HEAD_R * HEAD_K[0] * Math.sqrt(Math.max(0, 1 - (y / (HEAD_R * HEAD_K[1])) ** 2 - (z / (HEAD_R * HEAD_K[2])) ** 2))
   face.eyes = []; face.joy = []; face.brows = []
   for (const s of [-1, 1]) {
-    const e = new THREE.Group(); e.position.set(F(-0.06, 0.21) - 0.03, -0.06, 0.21 * s); e.rotation.y = -Math.asin(0.21 / 0.58) * s; head.add(e)
-    const pupil = new THREE.Mesh(BALL, DARK); pupil.scale.set(0.05, 0.15, 0.1); e.add(pupil)
-    const hi = new THREE.Mesh(BALL, basic(0xffffff)); hi.scale.setScalar(0.036); hi.position.set(0.04, 0.055, 0.025 * s); e.add(hi)
-    const hi2 = new THREE.Mesh(BALL, basic(0xffffff)); hi2.scale.setScalar(0.017); hi2.position.set(0.045, -0.05, -0.02 * s); e.add(hi2)
+    const yaw = -Math.asin(EYE_Z / (HEAD_R * HEAD_K[2])) * s
+    const e = new THREE.Group(); e.position.set(F(EYE_Y, EYE_Z) - 0.035, EYE_Y, EYE_Z * s); e.rotation.y = yaw; head.add(e)
+    const pupil = new THREE.Mesh(BALL, DARK); pupil.scale.set(0.05, 0.14, 0.095); e.add(pupil)
+    const iris = new THREE.Mesh(BALL, IRIS); iris.scale.set(0.05, 0.07, 0.07); iris.position.set(0.006, -0.055, 0); e.add(iris)
+    const hi = new THREE.Mesh(BALL, basic(0xffffff)); hi.scale.setScalar(0.042); hi.position.set(0.045, 0.055, 0.028 * s); e.add(hi)
+    const hi2 = new THREE.Mesh(BALL, basic(0xffffff)); hi2.scale.setScalar(0.02); hi2.position.set(0.05, -0.06, -0.025 * s); e.add(hi2)
     face.eyes.push(e)
-    const arc = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.022, 8, 16, Math.PI), DARK); arc.rotation.y = Math.PI / 2; arc.position.set(F(-0.06, 0.21) - 0.01, -0.06, 0.21 * s); arc.visible = false; head.add(arc); face.joy.push(arc)
-    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.09, 3, 8), DARK); brow.rotation.x = Math.PI / 2; const bg = new THREE.Group(); bg.position.set(F(0.13, 0.21) - 0.005, 0.13, 0.21 * s); bg.rotation.y = -Math.asin(0.21 / 0.58) * s; bg.add(brow); head.add(bg); face.brows.push(bg)
-    const cheek = new THREE.Mesh(BALL, PINK); cheek.scale.set(0.03, 0.07, 0.1); cheek.position.set(F(-0.21, 0.32) - 0.005, -0.21, 0.32 * s); cheek.rotation.y = -Math.asin(0.32 / 0.58) * s; head.add(cheek)
+    const arc = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.022, 8, 16, Math.PI), DARK); arc.rotation.y = Math.PI / 2; const ag = new THREE.Group(); ag.position.set(F(EYE_Y, EYE_Z) - 0.01, EYE_Y - 0.02, EYE_Z * s); ag.rotation.y = yaw; ag.add(arc); ag.visible = false; head.add(ag); face.joy.push(ag)
+    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.017, 0.08, 3, 8), DARK); brow.rotation.x = Math.PI / 2; const bg = new THREE.Group(); bg.position.set(F(BROW_Y, EYE_Z) + 0.005, BROW_Y, EYE_Z * s); bg.rotation.y = yaw; bg.add(brow); head.add(bg); face.brows.push(bg)
+    const cz = 0.31, cy = -0.27, cheek = new THREE.Mesh(BALL, PINK); cheek.scale.set(0.03, 0.06, 0.1); cheek.position.set(F(cy, cz) - 0.008, cy, cz * s); cheek.rotation.y = -Math.asin(cz / (HEAD_R * HEAD_K[2])) * s; head.add(cheek)
   }
-  const mx = F(-0.26, 0) + 0.005
-  const mouth = (geo, rx, ry, rz) => { const m = new THREE.Mesh(geo, DARK); m.rotation.set(rx, ry, rz); m.position.set(mx, -0.26, 0); m.visible = false; head.add(m); return m }
+  const mx = F(MOUTH_Y, 0) + 0.004
+  const mouth = (geo, rx, ry, rz) => { const m = new THREE.Mesh(geo, DARK); m.rotation.set(rx, ry, rz); m.position.set(mx, MOUTH_Y, 0); m.visible = false; head.add(m); return m }
   face.mouths = {
-    smile: mouth(new THREE.TorusGeometry(0.085, 0.022, 8, 16, Math.PI), Math.PI, Math.PI / 2, 0),
-    frown: mouth(new THREE.TorusGeometry(0.07, 0.02, 8, 16, Math.PI), 0, Math.PI / 2, 0),
-    o: mouth(new THREE.TorusGeometry(0.045, 0.02, 8, 16), 0, Math.PI / 2, 0),
-    flat: mouth(new THREE.CapsuleGeometry(0.018, 0.08, 3, 8), Math.PI / 2, 0, 0),
+    smile: mouth(new THREE.TorusGeometry(0.06, 0.018, 8, 16, Math.PI), Math.PI, Math.PI / 2, 0),
+    frown: mouth(new THREE.TorusGeometry(0.055, 0.017, 8, 16, Math.PI), 0, Math.PI / 2, 0),
+    o: mouth(new THREE.TorusGeometry(0.04, 0.017, 8, 16), 0, Math.PI / 2, 0),
+    flat: mouth(new THREE.CapsuleGeometry(0.016, 0.06, 3, 8), Math.PI / 2, 0, 0),
   }
-  { const open = new THREE.Mesh(new THREE.CircleGeometry(0.11, 24, Math.PI, Math.PI), basic(0x8a2a3a, { side: THREE.DoubleSide })); open.rotation.y = Math.PI / 2; open.position.set(mx - 0.012, -0.21, 0)
-    const tongue = new THREE.Mesh(new THREE.CircleGeometry(0.055, 16, Math.PI, Math.PI), basic(0xff7a8a, { side: THREE.DoubleSide })); tongue.position.set(0, -0.045, 0.002); open.add(tongue); open.visible = false; head.add(open); face.mouths.open = open }
+  { const open = new THREE.Mesh(new THREE.CircleGeometry(0.085, 24, Math.PI, Math.PI), basic(0x8a2a3a, { side: THREE.DoubleSide })); open.rotation.y = Math.PI / 2; open.position.set(mx - 0.012, MOUTH_Y + 0.04, 0)
+    const tongue = new THREE.Mesh(new THREE.CircleGeometry(0.045, 16, Math.PI, Math.PI), basic(0xff7a8a, { side: THREE.DoubleSide })); tongue.position.set(0, -0.035, 0.002); open.add(tongue); open.visible = false; head.add(open); face.mouths.open = open }
 }
 // arms + club swing around the chest; at angle 0 the club head sits behind the ball. The club also hinges at the wrists.
-const gArms = new THREE.Group(); gArms.position.set(0.12, 1.2, 0); gTwist.add(gArms)
+// The club is long for a kid (the arms stay short: shoulder -> elbow out past the belly -> round mitten hands on the grip).
+const gArms = new THREE.Group(); gArms.position.set(0.14, 0.95, 0); gTwist.add(gArms)
 const gClub = new THREE.Group(); gArms.add(gClub)
 {
-  const d = new THREE.Vector3(-GX - 0.12, -1.2, 0).normalize(), grip = d.clone().multiplyScalar(0.84), up = new THREE.Vector3(0, 1, 0)
+  const len = 1.1, reachG = Math.hypot(-GX - 0.14, 0.95), d = new THREE.Vector3(-GX - 0.14, -0.95, 0).normalize(), grip = d.clone().multiplyScalar(reachG - len - 0.08), up = new THREE.Vector3(0, 1, 0)
   gClub.position.copy(grip)
-  // shoulder -> elbow (around the round belly, never through it) -> hands on the grip
   const limb = (a, b, r, mat) => { const v = b.clone().sub(a), L = v.length(), m = tp(new THREE.CapsuleGeometry(r, L, 4, 14), mat, 0, 0, 0, 1, 1, 1, 1, r, L / 2 + r, r); m.position.copy(a).addScaledVector(v, 0.5); m.quaternion.setFromUnitVectors(up, v.normalize()); gArms.add(m); return v }
   for (const s of [-1, 1]) {
-    const sh = new THREE.Vector3(0.02, 0.16, 0.5 * s), el = new THREE.Vector3(0.44, -0.2, 0.42 * s), hand = grip.clone().add(new THREE.Vector3(0, 0, 0.05 * s))
-    const v = limb(sh, el, 0.11, SKIN); limb(el, hand, 0.1, SKIN)
-    gArms.add(tp(BALL, SKIN, el.x, el.y, el.z, 0.11, 0.11, 0.11, 0))
-    gArms.add(tp(BALL, SHIRT, sh.x + 0.02, sh.y - 0.02, sh.z * 0.94, 0.2, 0.2, 0.2))
-    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 8, 20), TRIM); cuff.position.copy(sh).addScaledVector(v, 0.17); cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), v); gArms.add(cuff)
+    const sh = new THREE.Vector3(0.04, 0.03, 0.33 * s), el = new THREE.Vector3(0.3, -0.1, 0.31 * s), hand = grip.clone().add(new THREE.Vector3(0, 0, 0.06 * s))
+    limb(sh, el, 0.08, SKIN); limb(el, hand, 0.075, SKIN)
+    gArms.add(tp(BALL, SKIN, el.x, el.y, el.z, 0.08, 0.08, 0.08, 0))
+    // puffy short sleeve over the top of the arm
+    const sv = el.clone().sub(sh), sl = tp(new THREE.CapsuleGeometry(0.115, 0.1, 4, 14), SHIRT, 0, 0, 0, 1, 1, 1, 1, 0.115, 0.165, 0.115); sl.position.copy(sh).addScaledVector(sv, 0.3); sl.quaternion.setFromUnitVectors(up, sv.normalize()); gArms.add(sl)
   }
-  // hands on the grip: a white glove on top, the bare hand below it
-  gClub.add(tp(BALL, WHITE, 0, 0, 0, 0.14, 0.13, 0.14))
-  gClub.add(tp(BALL, SKIN, d.x * 0.16, d.y * 0.16, 0, 0.125, 0.12, 0.13))
-  const len = 0.92, at = (k) => d.clone().multiplyScalar(k)
-  const rubber = tp(CYL, GRIPM, 0, 0, 0, 0.055, 0.34, 0.055, 1, 0.055, 0.17, 0.055); rubber.position.copy(at(0.08)); rubber.quaternion.setFromUnitVectors(up, d); gClub.add(rubber)
+  // round mittens on the grip: the white glove on top, the bare hand under it
+  gClub.add(tp(BALL, WHITE, 0, 0, 0, 0.125, 0.12, 0.13))
+  gClub.add(tp(BALL, SKIN, d.x * 0.15, d.y * 0.15, 0, 0.115, 0.11, 0.12))
+  const at = (k) => d.clone().multiplyScalar(k)
+  const rubber = tp(CYL, GRIPM, 0, 0, 0, 0.05, 0.34, 0.05, 1, 0.05, 0.17, 0.05); rubber.position.copy(at(0.08)); rubber.quaternion.setFromUnitVectors(up, d); gClub.add(rubber)
   const shaft = tp(CYL, METAL, 0, 0, 0, 0.026, len - 0.2, 0.026, 1, 0.026, (len - 0.2) / 2, 0.026); shaft.position.copy(at(0.2 + (len - 0.2) / 2)); shaft.quaternion.setFromUnitVectors(up, d); gClub.add(shaft)
   const hosel = tp(CYL, CAPM, 0, 0, 0, 0.045, 0.1, 0.045, 1, 0.045, 0.05, 0.045); hosel.position.copy(at(len - 0.02)); hosel.quaternion.setFromUnitVectors(up, d); gClub.add(hosel)
-  const hp = at(len + 0.06), ch = tp(BALL, METAL, hp.x + 0.02, hp.y + 0.04, hp.z, 0.13, 0.1, 0.25); ch.rotation.z = -0.25; gClub.add(ch)
-  const plate = tp(BALL, GRIPM, hp.x + 0.02, hp.y + 0.04, hp.z - 0.12, 0.1, 0.075, 0.02, 0); gClub.add(plate)
+  const hp = at(len + 0.06), ch = tp(BALL, METAL, hp.x + 0.02, hp.y + 0.04, hp.z, 0.14, 0.11, 0.27); ch.rotation.z = -0.25; gClub.add(ch)
+  gClub.add(tp(BALL, GRIPM, hp.x + 0.02, hp.y + 0.04, hp.z - 0.13, 0.11, 0.08, 0.02, 0))
   const tipO = new THREE.Object3D(), tipI = new THREE.Object3D(); tipO.position.copy(at(len + 0.25)); tipI.position.copy(at(0.3)); gClub.add(tipO, tipI); golfer.userData.tipO = tipO; golfer.userData.tipI = tipI
 }
 // the pose from two numbers: arm angle (negative = wound up) and shoulder turn; hips follow 40%, wrists hinge the club
@@ -267,9 +297,9 @@ function stepFace(dt) {
   const T = { idle: [1, 0, 'smile'], focus: [0.72, 0.32, 'flat'], happy: [1, -0.25, 'open'], wince: [0.22, 0.4, 'frown'], surprise: [1.25, -0.4, 'o'], sad: [0.8, -0.45, 'frown'] }[m]
   const k = 1 - Math.exp(-16 * dt)
   face.eye = lerp(face.eye, T[0] * (face.blinkT > 0 && m !== 'happy' ? 0.08 : 1), face.blinkT > 0 ? 1 : k); face.brow = lerp(face.brow, T[1], k)
-  face.eyes.forEach((e, i) => { e.visible = m !== 'happy'; e.scale.y = face.eye; e.position.y = m === 'sad' ? -0.09 : -0.06 })
+  face.eyes.forEach((e, i) => { e.visible = m !== 'happy'; e.scale.y = face.eye; e.position.y = m === 'sad' ? EYE_Y - 0.03 : EYE_Y })
   face.joy.forEach((a) => { a.visible = m === 'happy' })
-  face.brows.forEach((b, i) => { b.rotation.x = face.brow * (i ? -1 : 1); b.position.y = 0.13 + (m === 'surprise' ? 0.04 : 0) - Math.max(0, face.brow) * 0.03 })
+  face.brows.forEach((b, i) => { b.rotation.x = face.brow * (i ? -1 : 1); b.position.y = BROW_Y + (m === 'surprise' ? 0.035 : 0) - Math.max(0, face.brow) * 0.03 })
   for (const key in face.mouths) face.mouths[key].visible = key === T[2]
 }
 // swing state: ang = arm angle (negative = wound up), twist, squash (1 = normal) with a spring, hop
@@ -316,7 +346,7 @@ function poseGolfer(dt) {
   gTwist.rotation.z = lerp(gTwist.rotation.z, sad ? -0.13 : 0, k)
   gBody.rotation.y = swing.cheer > 0 ? Math.PI * 2 * ease(clamp(swing.cheer / 0.75, 0, 1)) : 0
   const head = golfer.userData.head, look = game.phase === 'aim' || game.phase === 'swing' ? -0.2 : sad ? -0.22 : swing.cheer > 0 ? 0.2 : -0.05
-  head.rotation.y = clamp(-swing.twist * 0.75, -1.2, 1.2); head.rotation.z = lerp(head.rotation.z, clamp(look - swing.twist * 0.12, -0.5, 0.3), k)
+  head.userData.yaw = lerp(head.userData.yaw || 0, still && !shot.dragging && game.phase !== 'swing' ? -0.42 : 0, k); head.rotation.y = clamp(-swing.twist * 0.75, -1.2, 1.2) + head.userData.yaw; head.rotation.z = lerp(head.rotation.z, clamp(look - swing.twist * 0.12, -0.5, 0.3), k)
 }
 
 // ---------------------------------------------------------------- effects: particles, trail, rings, marks, popups
@@ -409,10 +439,33 @@ const powerRing = new THREE.Mesh(new THREE.RingGeometry(0.78, 1, 36).rotateX(-Ma
 // ---------------------------------------------------------------- one hole: ground picture, ground mesh, trees, toys
 let course = null, theme = THEMES.meadow
 const holeGroup = new THREE.Group(); scene.add(holeGroup)
-const live = { pads: [], boosts: [], movers: [] }
+const live = { pads: [], boosts: [], movers: [], arrows: null, fx: null }
+function stepLive(now, dt) {
+  const A = live.arrows
+  if (A) for (let i = 0; i < A.pts.length; i++) {
+    const q = A.pts[i], ph = (now * 0.0006 + q.ph) % 1, o = (ph - 0.5) * 1.6, k = ph < 0.2 ? ph / 0.2 : ph > 0.75 ? (1 - ph) / 0.25 : 1, x = q.x + q.dx * o, z = q.z + q.dz * o
+    dummy.position.set(x, course.h(x, z) + 0.06, z); dummy.rotation.set(0, Math.atan2(-q.dx, -q.dz), 0); dummy.scale.set(q.s * 0.75 * k, 1, q.s * k); dummy.updateMatrix(); A.m.setMatrixAt(i, dummy.matrix)
+  }
+  if (A) A.m.instanceMatrix.needsUpdate = true
+  const F = live.fx
+  if (F) {
+    const c = cam.look, w = course ? course.wx * 0.25 : 0, wz = course ? course.wz * 0.25 : 0
+    F.ps.forEach((q, i) => {
+      if (F.kind === 'snow') { q.y -= 1.7 * dt; q.x += (w + Math.sin(now * 0.001 + q.ph) * 0.4) * dt; q.z += wz * dt }
+      else if (F.kind === 'petals') { q.y -= 1.1 * dt; q.x += (w + Math.sin(now * 0.0015 + q.ph) * 1.2) * dt; q.z += wz * dt }
+      else if (F.kind === 'embers') { q.y += 2.4 * dt; q.x += Math.sin(now * 0.002 + q.ph) * 0.8 * dt }
+      else { q.x += Math.sin(now * 0.0007 + q.ph) * 0.9 * dt; q.z += Math.cos(now * 0.0006 + q.ph * 2) * 0.9 * dt; q.y = 1 + (q.ph % 1) * 4 + Math.sin(now * 0.0011 + q.ph) * 0.6 }
+      if (q.y < 0) q.y += 16; if (q.y > 16) q.y -= 16; if (q.x > 35) q.x -= 70; if (q.x < -35) q.x += 70; if (q.z > 35) q.z -= 70; if (q.z < -35) q.z += 70
+      const sz = F.kind === 'fireflies' ? 0.09 * (0.5 + 0.5 * Math.sin(now * 0.004 + q.ph * 3)) : F.kind === 'petals' ? 0.13 : F.kind === 'embers' ? 0.07 : 0.1
+      dummy.position.set(c.x + q.x, (F.kind === 'fireflies' ? (course ? course.h(c.x + q.x, c.z + q.z) : 0) : c.y - 3) + q.y, c.z + q.z)
+      dummy.rotation.set(now * 0.001 + q.ph, q.ph, 0); dummy.scale.set(sz, F.kind === 'petals' ? sz * 0.3 : sz, sz); dummy.updateMatrix(); F.m.setMatrixAt(i, dummy.matrix)
+    })
+    F.m.instanceMatrix.needsUpdate = true
+  }
+}
 function disposeHole() {
   holeGroup.traverse((o) => { if (o.geometry && !o.userData.keepGeo) o.geometry.dispose(); if (o.material && o.userData.ownMat) { o.material.map?.dispose(); o.material.dispose() } })
-  holeGroup.clear(); live.pads = []; live.boosts = []; live.movers = []
+  holeGroup.clear(); live.pads = []; live.boosts = []; live.movers = []; live.arrows = null; live.fx = null
   for (const m of marks) m.visible = false
 }
 function paintGround(C, X0, Z0, W, L) {
@@ -421,7 +474,7 @@ function paintGround(C, X0, Z0, W, L) {
   const ell = (s, k = 1, grow = 0) => { g.beginPath(); g.ellipse(X(s[0]), Z(s[1]), (s[2] * k + grow) * ppu, (s[3] * k + grow) * ppu, s[4] || 0, 0, Math.PI * 2) }
   const speckle = (n, x0, x1, z0, z1, colors, size) => { for (let i = 0; i < n; i++) { g.fillStyle = colors[i % colors.length]; const x = X(lerp(x0, x1, rand())), z = Z(lerp(z0, z1, rand())), s = size * ppu * (0.5 + rand()); g.beginPath(); g.ellipse(x, z, s, s * 0.6, rand() * 3, 0, 6.3); g.fill() } }
   if (C.sea) {
-    g.fillStyle = '#2a86c4'; g.fillRect(0, 0, cv.width, cv.height)
+    g.fillStyle = theme.sea || '#2a86c4'; g.fillRect(0, 0, cv.width, cv.height)
     for (const s of H.land) { g.fillStyle = theme.sand; ell(s, 1.13); g.fill() }
     for (const s of H.land) { g.fillStyle = theme.rough; ell(s, 0.95); g.fill() }
     g.save(); g.beginPath(); for (const s of H.land) { g.moveTo(X(s[0]) + s[2] * 0.93 * ppu, Z(s[1])); g.ellipse(X(s[0]), Z(s[1]), s[2] * 0.93 * ppu, s[3] * 0.93 * ppu, s[4] || 0, 0, Math.PI * 2) } g.clip()
@@ -429,7 +482,7 @@ function paintGround(C, X0, Z0, W, L) {
   } else {
     g.fillStyle = theme.rough; g.fillRect(0, 0, cv.width, cv.height)
     speckle(2600, X0, X0 + W, Z0, Z0 + L, [theme.rough2, theme.rough2, theme.rough2, theme.fair2], 1)
-    for (const s of H.water || []) { g.fillStyle = theme.sand; ell(s, 1.16); g.fill(); g.fillStyle = '#2a86c4'; ell(s, 0.98); g.fill() }
+    for (const s of H.water || []) { g.fillStyle = theme.sand; ell(s, 1.16); g.fill(); g.fillStyle = theme.sea || '#2a86c4'; ell(s, 0.98); g.fill() }
   }
   // fairways: dark edge, then the mown stripes
   g.lineCap = 'round'; g.lineJoin = 'round'
@@ -444,6 +497,13 @@ function paintGround(C, X0, Z0, W, L) {
   tg.globalCompositeOperation = 'source-atop'; tg.fillStyle = theme.fair2
   for (let z = Z0; z < Z0 + L; z += 12) tg.fillRect(0, Z(z), cv.width, 6 * ppu)
   g.drawImage(tmp, 0, 0)
+  // ice: pale blue with a dark rim, cracks and a shine
+  for (const s of H.ice || []) {
+    g.fillStyle = theme.line; ell(s, 1, 0.4); g.fill(); g.fillStyle = theme.ice || '#bfe9ff'; ell(s); g.fill()
+    g.save(); ell(s); g.clip(); g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 0.22 * ppu
+    for (let k = 0; k < 8; k++) { const a = rand() * 6.3, r = Math.max(s[2], s[3]), q = 0.15 + rand() * 0.3; g.beginPath(); g.moveTo(X(s[0] + Math.cos(a) * r * q), Z(s[1] + Math.sin(a) * r * q)); g.lineTo(X(s[0] + Math.cos(a + 0.2) * r * (q + 0.35)), Z(s[1] + Math.sin(a + 0.2) * r * (q + 0.35))); g.lineTo(X(s[0] + Math.cos(a) * r), Z(s[1] + Math.sin(a) * r)); g.stroke() }
+    g.fillStyle = 'rgba(255,255,255,.4)'; g.beginPath(); g.ellipse(X(s[0] - s[2] * 0.3), Z(s[1] - s[3] * 0.3), s[2] * 0.4 * ppu, s[3] * 0.16 * ppu, 0.5, 0, 6.3); g.fill(); g.restore()
+  }
   // green: fringe, edge, stripes of two greens, cup shadow
   const G0 = C.green
   g.fillStyle = theme.fair; ell(G0, 1, 2.2); g.fill()
@@ -467,6 +527,8 @@ function buildHole(index) {
   const H = HOLES[index]; theme = THEMES[H.theme]; course = makeCourse(H)
   const C = course, B = H.bounds, M = C.sea ? 26 : 44, X0 = B[0] - M, Z0 = B[2] - M, W = B[1] - B[0] + M * 2, L = B[3] - B[2] + M * 2
   paintSky(theme.sky); scene.fog.color.set(theme.fog); sun.color.set(theme.sun)
+  hemi.intensity = theme.light ? theme.light[0] : 1.5; sun.intensity = theme.light ? theme.light[1] : 1.7
+  water.material.emissive.set(theme.glow || 0); water.material.opacity = theme.glow || theme.hazard === 'sky' ? 0.96 : 0.86
   water.material.color.set(theme.water); farGround.material.color.set(theme.rough2); farGround.visible = !C.sea
   if (C.sea) { water.scale.set(1500, 1, 1500); water.position.set(0, WATER_Y, -100) } else { water.scale.set(W, 1, L); water.position.set(X0 + W / 2, WATER_Y, Z0 + L / 2) }
   // ground mesh
@@ -494,7 +556,7 @@ function buildHole(index) {
   for (let i = 0, n = 0; i < H.trees * 40 && n < H.trees; i++) { const x = lerp(B[0], B[1], rand()), z = lerp(B[2], B[3], rand()); if (free(x, z, true)) { plant(x, z, 0.85 + rand() * 0.5); n++ } }
   for (const gr of H.grove || []) for (let i = 0, n = 0; i < 900 && n < 26; i++) { const a = rand() * 6.3, r = Math.sqrt(rand()), x = gr[0] + Math.cos(a) * r * gr[2], z = gr[1] + Math.sin(a) * r * gr[3]; if (free(x, z, false)) { plant(x, z, 0.9 + rand() * 0.5); n++ } }
   if (!C.sea) for (let i = 0, n = 0; i < 4000 && n < 120; i++) { const x = lerp(X0 + 3, X0 + W - 3, rand()), z = lerp(Z0 + 3, Z0 + L - 3, rand()); if (C.out(x, z) && free(x, z, false)) { plant(x, z, 1 + rand() * 0.8); n++ } }
-  const T = { round: { r: 0.36, th: 2.3, cy: 3.7, cr: 2.1, crown: [2.1, 2.0, 2.1] }, pine: { r: 0.3, th: 1.3, cy: 3.9, cr: 1.6, crown: [1.9, 5.6, 1.9] }, cactus: { r: 0.55, th: 3.3, cy: 3.3, cr: 0, crown: [0.56, 0.56, 0.56] }, palm: { r: 0.3, th: 4.8, cy: 5.1, cr: 1.7, crown: [2.4, 0.8, 2.4] } }[kind]
+  const T = { round: { r: 0.36, th: 2.3, cy: 3.7, cr: 2.1, crown: [2.1, 2.0, 2.1] }, pine: { r: 0.3, th: 1.3, cy: 3.9, cr: 1.6, crown: [1.9, 5.6, 1.9] }, cactus: { r: 0.55, th: 3.3, cy: 3.3, cr: 0, crown: [0.56, 0.56, 0.56] }, palm: { r: 0.3, th: 4.8, cy: 5.1, cr: 1.7, crown: [2.4, 0.8, 2.4] }, bamboo: { r: 0.17, th: 7.2, cy: 6.9, cr: 0.9, crown: [1.05, 2.6, 1.05] } }[kind]
   const n = spots.length
   if (n) {
     const crownGeo = kind === 'pine' ? new THREE.ConeGeometry(1, 1, 7) : ICO
@@ -511,6 +573,57 @@ function buildHole(index) {
       crownM.setColorAt(i, tmpC.set(theme.leaf[Math.floor(rand() * theme.leaf.length)]))
       if (!C.out(s.x, s.z)) C.trees.push({ x: s.x, z: s.z, by, r: T.r * k, th: T.th * k, cy: T.cy * k, cr: T.cr * k })
     })
+  }
+  // night: lamp posts along the fairway, each with a pool of light (the ball can clang off a post)
+  if (theme.lamps) {
+    const postM = lam(0x2a2f3a), bulbM = basic(0xfff1a8), poolM = basic(0xffe48a, { transparent: true, opacity: 0.22, depthWrite: false })
+    let side = 1
+    for (const f of H.fair) for (let i = 0; i < f.pts.length - 1; i++) {
+      const a = f.pts[i], b = f.pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L
+      for (let d = 14; d < L; d += 30) {
+        side = -side; const x = a[0] + (b[0] - a[0]) * d / L + nx * side * (f.w / 2 + 2.4), z = a[1] + (b[1] - a[1]) * d / L + nz * side * (f.w / 2 + 2.4)
+        if (C.surf(x, z) !== 'rough' || C.out(x, z) || ellD(x, z, C.green) < 2 || Math.hypot(x, z) < 10) continue
+        const by = C.h(x, z), post = new THREE.Mesh(CYL, postM), bulb = new THREE.Mesh(SPH, bulbM), pool = new THREE.Mesh(CIRCLE, poolM)
+        post.position.set(x, by + 2.1, z); post.scale.set(0.13, 4.2, 0.13); bulb.position.set(x, by + 4.35, z); bulb.scale.setScalar(0.42); pool.position.set(x, by + 0.07, z); pool.scale.set(4.2, 1, 4.2)
+        for (const m of [post, bulb, pool]) { m.userData.keepGeo = true; m.userData.ownMat = true; holeGroup.add(m) }
+        C.trees.push({ x, z, by, r: 0.16, th: 4.2, cy: 4.35, cr: 0.45 })
+      }
+    }
+  }
+  // back nine: long grass tufts on the rough next to the fairway (the rough costs power there)
+  if (H.rough) {
+    const pts = []
+    for (let i = 0; i < 9000 && pts.length < 460; i++) { const x = lerp(B[0], B[1], rand()), z = lerp(B[2], B[3], rand()), d = C.fairD(x, z); if (d > 1.08 && d < 2.4 && C.surf(x, z) === 'rough' && !C.out(x, z) && ellD(x, z, C.green) > 1.6 && Math.hypot(x, z) > 6 && C.landness(x, z) > 0.999) pts.push([x, z]) }
+    if (pts.length) {
+      const tuft = new THREE.Color(theme.fair2), blade = new THREE.ConeGeometry(0.1, 0.62, 3), tm = new THREE.InstancedMesh(blade, lam(0xffffff), pts.length * 3); tm.userData.ownMat = true; tm.frustumCulled = false
+      pts.forEach((q, i) => { const by = C.h(q[0], q[1]); for (let k = 0; k < 3; k++) {
+        const ox = (rand() - 0.5) * 0.5, oz = (rand() - 0.5) * 0.5, hh = 0.75 + rand() * 0.6
+        dummy.position.set(q[0] + ox, by + 0.25 * hh, q[1] + oz); dummy.rotation.set((rand() - 0.5) * 0.7, rand() * 6, (rand() - 0.5) * 0.7); dummy.scale.set(1, hh, 1); dummy.updateMatrix()
+        tm.setMatrixAt(i * 3 + k, dummy.matrix); tm.setColorAt(i * 3 + k, tmpC.set(k ? theme.rough2 : theme.rough).lerp(tuft, 0.55).multiplyScalar(0.78 + rand() * 0.15)) } })
+      holeGroup.add(tm)
+    }
+  }
+  // back nine: arrows on the green that flow downhill (a putt breaks that way); bigger arrows = steeper
+  if (H.band) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); g.lineCap = 'round'; g.lineJoin = 'round'
+    for (const [w, c] of [[16, 'rgba(29,42,58,.55)'], [9, '#ffffff']]) { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(14, 44); g.lineTo(32, 22); g.lineTo(50, 44); g.stroke() }
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace
+    const G = C.green, pts = []
+    for (let gx = -G[2]; gx <= G[2]; gx += 2.3) for (let gz = -G[3]; gz <= G[3]; gz += 2.3) {
+      const x = G[0] + gx, z = G[1] + gz; if (ellD(x, z, G) > 0.8 || Math.hypot(x - C.pin[0], z - C.pin[1]) < 1.2) continue
+      const hx = (C.h(x + 0.3, z) - C.h(x - 0.3, z)) / 0.6, hz = (C.h(x, z + 0.3) - C.h(x, z - 0.3)) / 0.6, m = Math.hypot(hx, hz)
+      if (m > 0.012) pts.push({ x, z, dx: -hx / m, dz: -hz / m, s: Math.min(1.5, 0.6 + m * 7), ph: pts.length * 0.37 })
+    }
+    if (pts.length) {
+      const am = new THREE.InstancedMesh(CIRCLE, basic(0xffffff, { map: tex, transparent: true, opacity: 0.72, depthWrite: false }), pts.length); am.userData.keepGeo = true; am.userData.ownMat = true; am.frustumCulled = false
+      holeGroup.add(am); live.arrows = { m: am, pts }
+    }
+  }
+  // little things in the air: fireflies, petals, embers, snow (around the camera)
+  if (theme.fx) {
+    const n = 110, col = { fireflies: 0xfff36a, petals: 0xffb8d2, embers: 0xff8a2a, snow: 0xffffff }[theme.fx]
+    const fm = new THREE.InstancedMesh(SPH, basic(col, { transparent: true, opacity: 0.9, depthWrite: false }), n); fm.userData.keepGeo = true; fm.userData.ownMat = true; fm.frustumCulled = false
+    holeGroup.add(fm); live.fx = { m: fm, kind: theme.fx, ps: Array.from({ length: n }, () => ({ x: rand() * 70 - 35, y: rand() * 16, z: rand() * 70 - 35, ph: rand() * 6.3 })) }
   }
   // tee markers
   for (const s of [-1, 1]) { const m = part(SPH, lam(0xff5a4a), 3.1 * s, C.h(3.1 * s, 0.6) + 0.22, 0.6, 0.16); m.scale.setScalar(0.24); m.userData.keepGeo = true; m.children[0].userData.keepGeo = true; m.userData.ownMat = true; holeGroup.add(m) }
@@ -547,7 +660,7 @@ function buildHole(index) {
 // ---------------------------------------------------------------- the shot
 const shot = { club: 'driver', lie: 'fairway', dir: { x: 0, z: -1 }, target: [0, 0], ideal: 1, power: 0, angle: 0, dragging: false, sx: 0, sy: 0, perfect: false, fromTee: true, from: { x: 0, y: 0, z: 0 }, carryShown: false, tick: 0, prev: null }
 const REACH = 1.22 // carry + a typical roll, for choosing the club
-const reach = (c, lie) => c === 'putter' ? CLUBS.putter.roll : CLUBS[c].carry * SURF[lie].lie * REACH
+const reach = (c, lie) => c === 'putter' ? CLUBS.putter.roll : CLUBS[c].carry * course.lie(lie) * REACH
 const dist2 = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz)
 function setupShot() {
   const C = course, pin = C.pin, dPin = dist2(ball.x, ball.z, pin[0], pin[1])
@@ -588,10 +701,18 @@ function setupShot() {
     }
   }
   shot.ideal = clamp(best, 0.12, 0.985)
+  newWind()
   shot.from = { x: ball.x, y: ball.y, z: ball.z }; shot.power = 0; shot.angle = 0; shot.dragging = false; shot.perfect = false
   placeGolfer(); swing.ang = 0; swing.twist = 0; swing.done = true; swing.t = -1; swing.cheer = 0
   game.phase = 'aim'; game.pt = 0
   syncHud()
+}
+// back nine: the wind turns and changes strength before every shot (front nine: one steady wind per hole)
+function newWind() {
+  const H = course.H, was = [course.wx, course.wz]
+  if (!H.gust) { course.wx = H.wind[0]; course.wz = H.wind[1] }
+  else { const a = rnd(0, Math.PI * 2), v = Math.round(rnd(H.gust[0], H.gust[1] + 0.99) - 0.49); course.wx = Math.sin(a) * v; course.wz = -Math.cos(a) * v }
+  game.windNew = Math.hypot(course.wx - was[0], course.wz - was[1]) > 0.3 ? 1 : 0
 }
 function placeGolfer() {
   golfer.position.set(ball.x, course.h(ball.x, ball.z), ball.z)
@@ -625,7 +746,8 @@ function updateAim() {
   $('powerPct').textContent = Math.round(shot.power * 100)
   $('power').classList.toggle('sweet', inBand)
 }
-const bandHalf = () => shot.club === 'putter' ? 0.05 : 0.04
+// the gold band: front nine ±4% (putter ±5%), the back nine narrows hole by hole (BALANCE.md)
+const bandHalf = () => { const b = course?.H.band; return b ? (shot.club === 'putter' ? b * 1.25 : b) : shot.club === 'putter' ? 0.05 : 0.04 }
 function fire() {
   shot.perfect = Math.abs(shot.power - shot.ideal) < bandHalf()
   shot.prev = { x: ball.x, y: ball.y, z: ball.z, strokes: game.strokes, fromTee: shot.fromTee }
@@ -637,7 +759,7 @@ function fire() {
 }
 function impact() {
   const d = aimDir(), p = shot.power, putt = shot.club === 'putter', big = putt ? 0.25 : 0.45 + p * 0.55
-  Object.assign(ball, launch(shot.club, p, shot.lie, d.x, d.z), { t: 0, bounces: 0, hitTree: null, boosted: null, lip: false, dunk: false, rolled: 0 })
+  Object.assign(ball, launch(shot.club, p, shot.lie, d.x, d.z, course.lie(shot.lie)), { t: 0, bounces: 0, hitTree: null, boosted: null, lip: false, dunk: false, rolled: 0 })
   game.strokes++; shot.fromTee = false; shot.carryShown = putt; game.phase = 'fly'; game.pt = 0
   // stage 2: the hit itself, all on this frame
   game.hitstop = putt ? 0 : shot.perfect ? 0.085 : 0.05 + p * 0.02
@@ -648,6 +770,7 @@ function impact() {
   const lieCol = shot.lie === 'bunker' ? [theme.sand, '#fff3c4'] : shot.lie === 'green' ? [theme.green2] : [theme.fair2, theme.rough2, '#6b4a2a']
   if (!putt) { burst(ball.x, ball.y, ball.z, Math.round(8 + big * 16), lieCol, 5 + big * 5, 6 + big * 5, 0.16, 0.7); for (let i = 0; i < 6 + big * 8; i++) spark(ball.x, ball.y, ball.z, d.x * rnd(8, 22) + rnd(-3, 3), rnd(2, 9), d.z * rnd(8, 22) + rnd(-3, 3), shot.perfect ? 0xffe14a : 0xffffff, 0.1, 0.35, 6) }
   if (shot.lie === 'bunker') burst(ball.x, ball.y, ball.z, 26, [theme.sand, '#fff3c4'], 7, 9, 0.2, 0.8)
+  if (shot.lie === 'rough' && course.H.rough) burst(ball.x, ball.y, ball.z, 28, [theme.rough, theme.rough2, theme.fair2], 6, 9, 0.15, 1, 14, 1)
   audio.play(putt ? 'putt' : 'crack', putt ? 0.5 + p * 0.5 : 0.55 + p * 0.5, putt ? 1 : 0.9 + p * 0.25)
   if (shot.perfect) { mood('happy', 1.2); audio.play('perfect'); pop(t('perfect'), ball.x, ball.y + 2.2, ball.z, 'gold'); buzz([30, 30, 50]) } else buzz(putt ? 10 : 20 + p * 30)
   trailCol.set(shot.perfect ? 0xffd23a : 0xffffff); trailPts.length = 0
@@ -699,9 +822,9 @@ function ballEvent(name, a, b) {
     ring(x, y - R, z, 0.3, 1.2 + v * 2.4, 0.3)
     if (first && v > 0.4) { game.shake = Math.max(game.shake, 0.12 * v); buzz(12) }
   } else if (name === 'water') {
-    for (let i = 0; i < 46; i++) { const an = rnd(0, 6.3), sp = rnd(0.5, 4.5); spark(x, WATER_Y, z, Math.cos(an) * sp, rnd(6, 15), Math.sin(an) * sp, i % 3 ? 0xffffff : 0xbfeaff, rnd(0.12, 0.26), rnd(0.6, 1.1), 22) }
+    for (let i = 0; i < 46; i++) { const an = rnd(0, 6.3), sp = rnd(0.5, 4.5); spark(x, WATER_Y, z, Math.cos(an) * sp, rnd(6, 15), Math.sin(an) * sp, theme.hazard === 'lava' ? (i % 3 ? 0xff7a1a : 0xffe14a) : i % 3 ? 0xffffff : 0xbfeaff, rnd(0.12, 0.26), rnd(0.6, 1.1), 22) }
     ring(x, WATER_Y, z, 0.4, 3.5, 0.6); setTimeout(() => ring(x, WATER_Y, z, 0.4, 5, 0.8), 140); setTimeout(() => ring(x, WATER_Y, z, 0.4, 6, 1), 300)
-    audio.play('splash'); game.shake = Math.max(game.shake, 0.12); buzz(40); pop(t('water'), x, y + 2.4, z, 'bad'); mood('surprise', 0.5); setTimeout(() => mood('sad', 1.8), 450)
+    audio.play('splash'); game.shake = Math.max(game.shake, 0.12); buzz(40); pop(t(theme.hazard === 'lava' ? 'lava' : theme.hazard === 'sky' ? 'fall' : 'water'), x, y + 2.4, z, 'bad'); mood('surprise', 0.5); setTimeout(() => mood('sad', 1.8), 450)
   } else if (name === 'ob') { pop(t('ob'), x, y + 2.4, z, 'bad'); audio.play('aw'); mood('sad', 2) }
   else if (name === 'pad') { const l = live.pads.find((q) => q.p === a); if (l) l.kick = 1; audio.play('boing'); pop(t('boing'), x, y + 2.2, z, 'gold'); ring(x, y, z, 1, a[2] * 1.6, 0.35, 0xff8aa0); burst(x, y + 0.6, z, 14, ['#ffffff', '#ff8aa0', '#ffe14a'], 5, 7, 0.14, 0.6); buzz(20) }
   else if (name === 'boost') { const l = live.boosts.find((q) => q.p === a); if (l) l.kick = 1; audio.play('zoom'); pop(t('zoom'), x, y + 2.2, z, 'gold'); trailCol.set(0xff8a1e); game.punch = Math.max(game.punch, 0.6); buzz(20) }
@@ -727,7 +850,12 @@ function holed() {
   finishHole(game.strokes)
 }
 function finishHole(strokes) {
-  game.scores[game.hole] = strokes
+  game.scores[game.hole - game.first] = strokes
+  if (game.hole === 8) save.frontDone = 1
+  const st = starsFor(strokes, course.H.par), was = save.stars[game.hole] || 0
+  game.starsNow = st; game.starsNew = st > was; game.opened = !save.cleared[game.hole] && game.hole + 1 < HOLES.length ? game.hole + 1 : -1
+  if (st > was) save.stars[game.hole] = st
+  save.cleared[game.hole] = 1
   if (!save.bestHoles[game.hole] || strokes < save.bestHoles[game.hole]) save.bestHoles[game.hole] = strokes
   writeSave(); syncHud()
   platform.track('hole_done', { hole: game.hole + 1, strokes, par: course.H.par })
@@ -761,11 +889,23 @@ function mulligan() {
 }
 
 // ---------------------------------------------------------------- round flow
-function startRun() {
+function setCourse(c) { game.course = c; game.single = false; game.first = COURSES[c][0]; game.last = COURSES[c][1] }
+// one hole from the map
+function startHole(i) {
+  if (!holeOpen(i)) { audio.play('aw'); toast(t('locked')); return }
+  game.course = regionOf(i).id; game.single = true; game.first = i; game.last = i + 1
   audio.unlock(); audio.music(true)
   game.state = 'run'; game.time = 0; game.scores = []; game.freeMull = true
-  hideAll(); $('hud').classList.remove('hide'); platform.message('gameplay_started'); platform.track('round_start', { runs: save.runs })
-  loadHole(0)
+  hideAll(); $('hud').classList.remove('hide'); platform.message('gameplay_started'); platform.track('hole_start', { hole: i + 1 })
+  loadHole(i)
+}
+function startRun(c = save.course) {
+  if (c === 'back' && !backOpen()) c = 'front'
+  setCourse(c); save.course = c; writeSave()
+  audio.unlock(); audio.music(true)
+  game.state = 'run'; game.time = 0; game.scores = []; game.freeMull = true
+  hideAll(); $('hud').classList.remove('hide'); platform.message('gameplay_started'); platform.track('round_start', { runs: save.runs, course: c })
+  loadHole(game.first)
 }
 function loadHole(i) {
   game.hole = i; game.strokes = 0; game.mullUsed = false; game.canMull = false; game.lastBad = false; shot.prev = null
@@ -779,22 +919,34 @@ function loadHole(i) {
 }
 function nextHole() {
   audio.play('click')
-  if (game.hole >= 8) { endRun(true); return }
-  const go = () => loadHole(game.hole + 1)
-  if (game.hole === 2 || game.hole === 5) platform.interstitial(go); else go()
+  if (game.single) { const n = game.hole + 1; game.played = (game.played || 0) + 1; if (n < HOLES.length && holeOpen(n)) { const go = () => startHole(n); if (game.played % 3 === 0) platform.interstitial(go); else go() } else toMap(); return }
+  if (game.hole >= game.last - 1) { endRun(true); return }
+  const go = () => loadHole(game.hole + 1), k = game.hole - game.first
+  if (k % 3 === 2) platform.interstitial(go); else go()
 }
+function toMap() { platform.message('gameplay_stopped'); hideAll(); $('banner').className = ''; game.state = 'title'; showTitle() }
+function retryHole() { audio.play('click'); const i = game.hole; game.played = (game.played || 0) + 1; const go = () => startHole(i); if (game.played % 3 === 0) platform.interstitial(go); else go() }
 function endRun(done) {
   if (game.state === 'title' || game.state === 'over') return
+  if (game.single) done = false
   platform.message('gameplay_stopped'); hideAll(); $('banner').className = ''
   if (!done) { game.state = 'title'; showTitle(); return }
   game.state = 'over'; save.runs++
-  const total = game.scores.reduce((s, v) => s + v, 0), record = !save.best || total < save.best
-  if (record) save.best = total
-  writeSave(); platform.track('round_done', { total, record })
-  $('resTitle').textContent = t('roundDone'); $('resNew').textContent = t('newBest'); $('resNew').classList.toggle('hide', !record)
-  $('resTable').innerHTML = `<div class="row head"><span>${t('hole')}</span>${HOLES.map((_, i) => `<i>${i + 1}</i>`).join('')}</div><div class="row"><span>${t('par')}</span>${HOLES.map((h) => `<i>${h.par}</i>`).join('')}</div><div class="row me"><span>${t('score')}</span>${game.scores.map((s, i) => `<i class="${scoreCls(s - HOLES[i].par)}">${s}</i>`).join('')}</div>`
-  $('resTotalLabel').textContent = t('total'); $('resTotal').textContent = `${total} (${vsPar(total - TOTAL_PAR)})`
-  $('resBestLabel').textContent = t('best'); $('resBest').textContent = `${save.best} (${vsPar(save.best - TOTAL_PAR)})`
+  const c = game.course, par = coursePar(c), list = courseHoles(c), total = game.scores.reduce((s, v) => s + v, 0), record = !save.bestC[c] || total < save.bestC[c]
+  if (record) save.bestC[c] = total
+  if (c === 'front' && (!save.best || total < save.best)) save.best = total
+  writeSave(); platform.track('round_done', { total, record, course: c })
+  $('resNew').textContent = t('newBest'); $('resNew').classList.toggle('hide', !record)
+  // the card in blocks of nine (18 holes = two blocks)
+  let html = ''
+  for (let b = 0; b < list.length; b += 9) {
+    const hs = list.slice(b, b + 9), sc = game.scores.slice(b, b + 9), n0 = game.first + b
+    html += `<div class="row head"><span>${t('hole')}</span>${hs.map((_, i) => `<i>${n0 + i + 1}</i>`).join('')}</div><div class="row"><span>${t('par')}</span>${hs.map((h) => `<i>${h.par}</i>`).join('')}</div><div class="row me"><span>${t('score')}</span>${hs.map((h, i) => `<i class="${sc[i] ? scoreCls(sc[i] - h.par) : ''}">${sc[i] || '·'}</i>`).join('')}</div>`
+  }
+  $('resTable').innerHTML = html; $('resTable').classList.toggle('two', list.length > 9)
+  $('resTitle').textContent = `${t('roundDone')} · ${t('c' + c)}`
+  $('resTotalLabel').textContent = t('total'); $('resTotal').textContent = `${total} (${vsPar(total - par)})`
+  $('resBestLabel').textContent = t('best'); $('resBest').textContent = `${save.bestC[c]} (${vsPar(save.bestC[c] - par)})`
   $('againBtn').textContent = t('again'); $('homeBtn').textContent = t('home')
   $('result').classList.remove('hide'); audio.play(record ? 'big' : 'cheer')
 }
@@ -807,20 +959,60 @@ function showTitle() {
   if (!course) buildHole(0)
   Object.assign(ball, { x: 0, z: 0, y: course.h(0, 0) + R, mode: 'rest', vx: 0, vy: 0, vz: 0 }); shot.dir = { x: 0, z: -1 }; placeGolfer(); trailPts.length = 0
   dots.visible = landRing.visible = powerRing.visible = false
-  $('playBtn').textContent = t('play'); $('bestLabel').textContent = t('best')
-  $('bestLine').textContent = save.best ? `${save.best} (${vsPar(save.best - TOTAL_PAR)})` : t('noBest')
-  $('cardMini').innerHTML = HOLES.map((h, i) => { const s = save.bestHoles[i]; return `<i class="${s ? scoreCls(s - h.par) : ''}"><small>${i + 1}</small>${s || '·'}</i>` }).join('')
+  showTitleText()
   $('title').classList.remove('hide')
+}
+// the stage map: regions top to bottom, nine holes in a winding path each (rows of three, the path snakes)
+function showTitleText() {
+  $('playBtn').textContent = t('round'); $('starTotal').textContent = totalStars()
+  let html = '', next = -1
+  for (let i = 0; i < HOLES.length && next < 0; i++) if (holeOpen(i) && !save.cleared[i]) next = i
+  for (const r of REGIONS) {
+    const open = regionOpen(r), got = save.stars.slice(r.from, r.to).reduce((a, b) => a + b, 0), n = r.to - r.from
+    const pos = Array.from({ length: n }, (_, k) => { const row = Math.floor(k / 3), c = k % 3; return [row % 2 ? 83 - c * 33 : 17 + c * 33, 16 + row * 33] })
+    html += `<div class="region${open ? '' : ' lock'}" style="--a:${r.bg[0]};--b:${r.bg[1]}"><div class="rHead"><b>${t('r_' + r.id)}</b><span class="rStars"><i class="starIco"></i>${got}/${n * 3}</span></div>`
+    if (!open) html += `<div class="rLock"><i class="lockIco"></i>${t('needHole').replace('{n}', r.from)} · <i class="starIco"></i>${r.need}</div>`
+    html += `<div class="path"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${pos.map((q) => q.join(',')).join(' ')}"/></svg>`
+    for (let k = 0; k < n; k++) {
+      const i = r.from + k, ok = holeOpen(i), st = save.stars[i] || 0, cls = !ok ? 'lock' : i === next ? 'next' : save.cleared[i] ? 'done' : ''
+      html += `<button class="node ${cls}" data-h="${i}" style="left:${pos[k][0]}%;top:${pos[k][1]}%"><b>${ok ? i + 1 : '<i class="lockIco"></i>'}</b><span class="st">${[0, 1, 2].map((q) => `<i class="${q < st ? 'on' : ''}"></i>`).join('')}</span><small>${t(HOLES[i].name)}</small></button>`
+    }
+    html += '</div></div>'
+  }
+  $('regions').innerHTML = html
+  const nx = $('regions').querySelector('.node.next'); if (nx) requestAnimationFrame(() => { const sc = $('mapScroll'); sc.scrollTop = Math.max(0, nx.offsetTop + nx.closest('.region').offsetTop - sc.clientHeight * 0.45) })
+}
+// full rounds: each open region's nine, and 18 once the back nine is open
+function showRounds() {
+  const host = $('panelBody'); host.innerHTML = ''; host.className = 'rounds'
+  $('panelTitle').textContent = t('round'); $('panelClose').textContent = t('close')
+  for (const c of ['front', 'back', 'full']) {
+    const lock = c !== 'front' && !backOpen(), b = save.bestC[c], par = coursePar(c), btn = document.createElement('button')
+    btn.className = 'course' + (lock ? ' lock' : ''); btn.innerHTML = `<b>${t('c' + c)}</b><small>${t('par')} ${par}</small><em>${lock ? `<i class="lockIco"></i>${t('locked')}` : b ? `${t('best')} ${b} (${vsPar(b - par)})` : t('noBest')}</em>`
+    btn.addEventListener('click', () => { if (lock) { audio.play('aw'); toast(t('locked')); return } audio.play('click'); $('panel').classList.add('hide'); startRun(c) })
+    host.appendChild(btn)
+  }
+  $('title').classList.add('hide'); $('panel').classList.remove('hide')
 }
 function syncHud() {
   if (!course) return
   const H = course.H
   $('holeNo').textContent = `${t('hole')} ${game.hole + 1}`; $('holePar').textContent = `${t('par')} ${H.par}`
-  $('dots').innerHTML = HOLES.map((h, i) => { const s = game.scores[i]; return `<i class="${i === game.hole ? 'now ' : ''}${s ? scoreCls(s - h.par) : ''}"></i>` }).join('')
+  const rg = regionOf(game.hole), d0 = game.single ? rg.from : game.first, list = HOLES.slice(d0, game.single ? rg.to : game.last)
+  $('dots').innerHTML = list.map((h, i) => { const s = game.single ? (d0 + i === game.hole ? game.scores[0] : 0) : game.scores[i], st = game.single && d0 + i !== game.hole ? save.stars[d0 + i] : -1
+    return `<i class="${d0 + i === game.hole ? 'now ' : ''}${s ? scoreCls(s - h.par) : st > 0 ? 'star' : save.cleared[d0 + i] && game.single ? 'clr' : ''}"></i>` }).join('')
+  $('dots').classList.toggle('two', list.length > 9)
   $('strokeLabel').textContent = t('stroke'); $('strokeN').textContent = Math.min(game.strokes + (game.phase === 'aim' || game.phase === 'intro' ? 1 : 0), 99)
   $('pinDist').textContent = `${Math.round(dist2(ball.x, ball.z, course.pin[0], course.pin[1]))}${t('m')}`
-  $('windLabel').textContent = t('wind'); $('windNum').textContent = Math.round(Math.hypot(H.wind[0], H.wind[1]))
-  $('windArrow').style.visibility = Math.hypot(H.wind[0], H.wind[1]) < 0.5 ? 'hidden' : 'visible'
+  const wv = Math.hypot(course.wx, course.wz), wb = $('windBox')
+  $('windLabel').textContent = t('wind'); $('windNum').textContent = Math.round(wv)
+  $('windArrow').style.visibility = wv < 0.5 ? 'hidden' : 'visible'
+  wb.classList.toggle('strong', wv >= 4.5); wb.classList.toggle('gusty', !!H.gust)
+  if (game.windNew && game.phase === 'aim') { game.windNew = 0; wb.classList.remove('pulse'); void wb.offsetWidth; wb.classList.add('pulse') }
+  // the lie: long grass, sand and ice say how much power they keep
+  const keep = course.lie(shot.lie), lt = $('lieTag'), lk = { rough: 'lieRough', bunker: 'lieSand', ice: 'lieIce' }[shot.lie]
+  lt.classList.toggle('hide', !(lk && game.phase === 'aim')); lt.dataset.lie = shot.lie
+  if (lk) $('lieText').textContent = keep < 0.995 ? `${t(lk)} −${Math.round((1 - keep) * 100)}%` : t(lk)
   $('clubName').textContent = t(shot.club); $('clubMax').textContent = `${Math.round(reach(shot.club, shot.lie) / (shot.club === 'putter' ? 1 : REACH))}${t('m')}`
   $('clubBox').dataset.lie = shot.lie
   const mb = $('mullBtn'); mb.classList.toggle('hide', !(game.canMull && game.phase === 'aim')); mb.innerHTML = `<i class="${platform.ready ? 'adIco' : 'freeIco'}"></i>${t('mulligan')}`
@@ -858,16 +1050,18 @@ function renderSettings() {
   toggleRow(host, 'shake', () => t(save.shake ? 'on' : 'off'), () => { save.shake = save.shake ? 0 : 1 })
   toggleRow(host, 'vib', () => t(save.vib ? 'on' : 'off'), () => { save.vib = save.vib ? 0 : 1; buzz(30) })
   if (document.fullscreenEnabled) toggleRow(host, 'full', () => t(document.fullscreenElement ? 'on' : 'off'), () => { try { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().then(renderSettings, () => {}) } catch {} })
-  langRow(host, () => { renderSettings(); showTitleText() })
+  langRow(host, () => { renderSettings(); if (game.state === 'title') showTitleText() })
   if (!platform.ready) { const a = document.createElement('a'); a.className = 'sub small link'; a.href = FEEDBACK_URL; a.target = '_blank'; a.rel = 'noopener'; a.textContent = t('feedback'); host.appendChild(a) }
 }
-function showTitleText() { if (game.state === 'title') { $('playBtn').textContent = t('play'); $('bestLabel').textContent = t('best'); if (!save.best) $('bestLine').textContent = t('noBest') } }
 function renderPause() {
   const host = $('pauseOpts'); host.innerHTML = ''; host.className = 'setGrid'
   $('pauseTitle').textContent = t('paused'); $('resumeBtn').textContent = t('resume'); $('quitBtn').textContent = t('quit')
   volumeSliders(host); langRow(host, renderPause)
 }
-$('playBtn').addEventListener('click', () => { audio.unlock(); audio.play('click'); startRun() })
+$('playBtn').addEventListener('click', () => { audio.unlock(); audio.play('click'); showRounds() })
+$('regions').addEventListener('click', (e) => { const b = e.target.closest('.node'); if (b) { audio.unlock(); startHole(Number(b.dataset.h)) } })
+$('retryBtn').addEventListener('click', retryHole)
+$('mapBtn').addEventListener('click', () => { audio.play('click'); toMap() })
 $('setBtn').addEventListener('click', () => { audio.unlock(); audio.play('click'); renderSettings(); $('title').classList.add('hide'); $('panel').classList.remove('hide') })
 $('panelClose').addEventListener('click', () => { audio.play('click'); $('panel').classList.add('hide'); if (game.state === 'title') $('title').classList.remove('hide') })
 $('pauseBtn').addEventListener('click', () => { audio.play('click'); pauseRun() })
@@ -969,11 +1163,19 @@ function simulate(dt) {
     if (game.pt > (bad ? 1.1 : 0.45)) { if (bad) penalty(); else afterShot() }
   }
   else if (game.phase === 'holed' && game.pt > 2.3) {
-    game.phase = 'card'; const H = course.H, key = game.result, sofar = game.scores.reduce((s, v) => s + v, 0), parSofar = HOLES.slice(0, game.hole + 1).reduce((s, h) => s + h.par, 0)
+    game.phase = 'card'; const H = course.H, key = game.result, sofar = game.scores.reduce((s, v) => s + v, 0), parSofar = HOLES.slice(game.first, game.hole + 1).reduce((s, h) => s + h.par, 0)
     $('hcTitle').textContent = t(key); $('hcTitle').className = scoreCls(game.strokes - H.par)
     $('hcSub').textContent = `${t('hole')} ${game.hole + 1} · ${t('par')} ${H.par} · ${game.strokes} ${t('stroke')}`
     $('hcTotalLabel').textContent = t('total'); $('hcTotal').textContent = `${sofar} (${vsPar(sofar - parSofar)})`
-    $('nextBtn').textContent = game.hole >= 8 ? t('card') : t('next'); $('holeCard').classList.remove('hide'); $('banner').className = ''
+    const st = game.starsNow || 0, best = save.stars[game.hole] || 0
+    $('hcStars').innerHTML = [0, 1, 2].map((k) => `<i class="${k < st ? 'on' : ''}" style="animation-delay:${0.15 + k * 0.22}s"></i>`).join('')
+    $('hcNote').textContent = game.starsNew && best > 0 ? t('newStars') : game.opened >= 0 ? `${t('opened')} ${t('hole')} ${game.opened + 1}` : st ? '' : t('parForStar')
+    $('hcNote').classList.toggle('hide', !$('hcNote').textContent)
+    $('hcTotal').parentNode.classList.toggle('hide', game.single)
+    const nextOk = game.hole + 1 < HOLES.length && holeOpen(game.hole + 1)
+    $('retryBtn').classList.toggle('hide', !game.single); $('mapBtn').classList.toggle('hide', !game.single); $('retryBtn').textContent = t('retry'); $('mapBtn').textContent = t('map')
+    $('nextBtn').classList.toggle('hide', game.single && !nextOk)
+    $('nextBtn').textContent = game.single ? t('next') : game.hole >= game.last - 1 ? t('card') : t('next'); $('holeCard').classList.remove('hide'); $('banner').className = ''
   }
   for (const l of live.movers) { const x = moverX(l.mv, game.time); l.m.position.set(x, course.h(x, l.mv[1]) + MOVER_H / 2 - 0.1, l.mv[1]) }
 }
@@ -1003,6 +1205,7 @@ function frame(now) {
   cloth.rotation.y = Math.sin(now * 0.004) * 0.35 + (course ? Math.atan2(-course.wz, course.wx) : 0)
   for (const c of clouds.children) { c.position.x += fx * 1.2; if (c.position.x > 300) c.position.x = -300 }
   for (const l of live.pads) { l.kick *= Math.exp(-6 * fx); l.g.scale.set(1 + l.kick * 0.25, 1 - l.kick * 0.5 * Math.cos(l.kick * 9), 1 + l.kick * 0.25) }
+  if (course) stepLive(now, Math.min(0.05, raw))
   for (const l of live.boosts) { l.kick *= Math.exp(-5 * fx); const s = l.p[2] * (1 + l.kick * 0.3 + Math.sin(now * 0.006) * 0.04); l.m.scale.set(s, 1, s) }
   stepCamera(fx || raw * (game.state === 'title' ? 1 : 0))
   // wind arrow turns with the camera; pin distance follows the ball
@@ -1018,7 +1221,7 @@ function frame(now) {
 async function boot() {
   await platform.init()
   document.documentElement.lang = lang
-  buildHole(0); game.state = 'title'; showTitle()
+  game.state = 'title'; showTitle()
   renderer.render(scene, camera)
   requestAnimationFrame((now) => { last = now; frame(now); $('loading').classList.add('gone'); setTimeout(() => $('loading').remove(), 400); platform.message('game_ready'); console.log(`BONK READY ${Math.round(performance.now())}ms`) })
 }
@@ -1028,15 +1231,17 @@ boot()
 if (DEBUG) window.__dbg = {
   game, shot, ball, save, platform, audio, swing,
   state: () => ({ state: game.state, phase: game.phase, hole: game.hole, strokes: game.strokes, scores: game.scores.slice(), club: shot.club, lie: shot.lie, ideal: shot.ideal, mode: ball.mode, time: game.time, info: renderer.info.memory }),
-  start: startRun, hole: (i) => { game.state = 'run'; hideAll(); $('hud').classList.remove('hide'); loadHole(i); game.pt = INTRO },
+  start: (c) => startRun(c), course: (c) => setCourse(c),
+  hole: (i) => { if (game.single || i < game.first || i >= game.last) setCourse(i < 9 ? 'front' : 'back'); game.scores = []; game.state = 'run'; hideAll(); $('hud').classList.remove('hide'); loadHole(i); game.pt = INTRO },
+  wind: (x, z) => { course.wx = x; course.wz = z; syncHud() },
   drag: (p, a = 0) => { shot.dragging = true; shot.power = p; shot.angle = a },
   shoot: (p, a = 0) => { if (game.phase !== 'aim') return false; shot.dragging = true; shot.power = p ?? shot.ideal; shot.angle = a; fire(); return true },
   auto: () => { if (game.state !== 'run') return game.state; if (game.phase === 'intro') game.pt = INTRO; if (game.phase === 'aim') { shot.power = shot.ideal; shot.angle = 0; shot.dragging = true; fire() } if (game.phase === 'card') nextHole(); return game.phase },
   holeIn: () => { ball.x = course.pin[0] + 1.2; ball.z = course.pin[1] + 0.2; ball.y = course.h(ball.x, ball.z) + R; shot.fromTee = false; setupShot() },
   put: (x, z) => { ball.x = x; ball.z = z; ball.y = course.h(x, z) + R; shot.fromTee = false; ball.mode = 'rest'; setupShot() },
   drop: (x, z, vx = 0, vz = 0, vy = -14, hgt = 6) => { Object.assign(ball, { x, z, y: course.h(x, z) + R + hgt, vx, vy, vz, mode: hgt > 0 ? 'air' : 'roll', t: 0, bounces: 0 }); shot.fromTee = false; game.strokes++; game.phase = 'fly'; game.pt = 0 },
-  course: () => course, cam: (f) => { game.camFix = f }, mood: (m, h) => mood(m, h),
+  C: () => course, cam: (f) => { game.camFix = f }, mood: (m, h) => mood(m, h),
   pos: () => ({ x: ball.x, y: ball.y, z: ball.z, v: Math.hypot(ball.vx, ball.vy, ball.vz), mode: ball.mode, surf: course.surf(ball.x, ball.z), phase: game.phase, pt: game.pt, power: shot.power, ideal: shot.ideal, club: shot.club }),
   end: endRun, pause: pauseRun, resume: resumeRun, settings: () => $('setBtn').click(), mull: () => { game.canMull = true; syncHud() },
-  lang: (l) => { lang = l; document.documentElement.lang = l; syncHud(); if (game.state === 'title') showTitle() },
+  lang: (l) => { lang = l; document.documentElement.lang = l; syncHud(); if (game.state === 'title') showTitle() }, single: (i) => startHole(i), map: () => toMap(), rounds: () => showRounds(), stars: (arr) => { arr.forEach((v, i) => { save.stars[i] = v; save.cleared[i] = v > 0 ? 1 : 0 }); if (game.state === 'title') showTitle() },
 }

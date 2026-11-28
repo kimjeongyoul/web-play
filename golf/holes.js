@@ -1,7 +1,11 @@
-// Bonk Golf: the nine holes as data (BALANCE.md has the table). The tee is at (0,0) and play goes toward -z.
+// Bonk Golf: the 18 holes as data (BALANCE.md has the table). 1-9 = front nine (easy), 10-18 = back nine. The tee is at (0,0) and play goes toward -z.
 // Shapes: ellipse = [cx, cz, rx, rz, rot]. fair = [{ w, pts: [[x,z],...] }]. hills = [cx, cz, radius, height].
 // bounds = [x0, x1, zFar, zNear]. wind = [x, z] (shown as its length). pads = [x, z, r]. boosts = [x, z, r, dirX, dirZ].
 // movers = [x, z, amplitude, period s, half length, phase]. trees = how many are scattered on the rough; tree = extra fixed ones [x, z, scale].
+// Back nine only: band = half width of the gold perfect band, gust = [min, max] wind that changes every shot, rough = power kept from
+// the long grass, dome = green crown (> 0) or bowl (< 0) in metres, ice = slippery patches (ellipses).
+// Theme extras: light = [sky light, sun], sea = colour under the water, glow = water that shines (lava), hazard = 'lava' | 'sky'
+// (the words for falling in), lamps = posts along the fairway, fx = 'fireflies' | 'petals' | 'embers' | 'snow' (little things in the air).
 export const THEMES = {
   meadow: { sky: ['#4aa8ff', '#c9efff'], fog: 0xc9efff, rough: '#5fae4a', rough2: '#55a043', fair: '#8fdc5a', fair2: '#7fd04e', green: '#b6f078', green2: '#a6e66a', sand: '#f6e3a1', water: 0x3fb7f2, line: '#2f6b2c', tree: 'round', leaf: [0x3d9a3f, 0x56b848], trunk: 0x8a5a36, hill: 0x6fc27a, sun: 0xfff4d6 },
   lake: { sky: ['#3d9cf5', '#d8f4ff'], fog: 0xd8f4ff, rough: '#58a850', rough2: '#4e9c47', fair: '#8ad860', fair2: '#7bcc53', green: '#b9f283', green2: '#a8e773', sand: '#f4e2a6', water: 0x2fa8ee, line: '#2b6630', tree: 'round', leaf: [0x2f8f4a, 0x4bb060], trunk: 0x86563a, hill: 0x62b88a, sun: 0xfff4d6 },
@@ -12,6 +16,15 @@ export const THEMES = {
   snow: { sky: ['#7fb6ee', '#eef8ff'], fog: 0xeef8ff, rough: '#e9f1f8', rough2: '#dbe6f0', fair: '#a8e0a0', fair2: '#98d492', green: '#c4f2b0', green2: '#b4e6a0', sand: '#f1e6c0', water: 0x7ec8f0, line: '#7a94aa', tree: 'pine', leaf: [0x2f7a5a, 0x3f8e6a], trunk: 0x6e4a36, hill: 0xdfeaf4, sun: 0xffffff },
   sunset: { sky: ['#ff6a5a', '#ffd58a'], fog: 0xffd58a, rough: '#6a9a4a', rough2: '#5f8e42', fair: '#a2d25a', fair2: '#94c64e', green: '#c8ee76', green2: '#b8e268', sand: '#f8dc98', water: 0x5a9ce8, line: '#3a5a26', tree: 'round', leaf: [0x4a8a3a, 0x6aa244], trunk: 0x6e4630, hill: 0xb86a6a, sun: 0xffc890 },
   dusk: { sky: ['#3a2a8a', '#ff9ab0'], fog: 0xe89ab8, rough: '#4a9a7a', rough2: '#42906f', fair: '#7ad49a', fair2: '#6cc88c', green: '#a8f0b4', green2: '#98e4a4', sand: '#f0d8b0', water: 0x5a6ae0, line: '#285a50', tree: 'palm', leaf: [0x2a9a7a, 0x3cb48c], trunk: 0x8a5a4a, hill: 0x6a4a9a, sun: 0xffc0d0 },
+  night: { sky: ['#0a1238', '#34437e'], fog: 0x29346a, rough: '#2f6c50', rough2: '#286246', fair: '#5eb06c', fair2: '#53a462', green: '#92e28c', green2: '#84d67f', sand: '#ddd2a2', water: 0x2c4cb4, line: '#163a2a', tree: 'round', leaf: [0x1f5c4a, 0x2a7058], trunk: 0x4a3a30, hill: 0x1e2a5a, sun: 0xc4d0ff, light: [1.05, 1.0], sea: '#1c2c6a', lamps: true, fx: 'fireflies' },
+  blossom: { sky: ['#7ab8ff', '#ffe2ef'], fog: 0xffe2ef, rough: '#6aac58', rough2: '#5fa04e', fair: '#98dc6a', fair2: '#8ad05e', green: '#bdf28a', green2: '#ade67c', sand: '#fbe8c0', water: 0x58b8f0, line: '#3a6a34', tree: 'round', leaf: [0xffb0cc, 0xff8ab4, 0xffd2e2], trunk: 0x6a4434, hill: 0xe8a6c4, sun: 0xfff0f4, fx: 'petals' },
+  canyon: { sky: ['#ff8a5a', '#ffdcaa'], fog: 0xffd2a0, rough: '#cf7c4a', rough2: '#c27040', fair: '#b4d466', fair2: '#a6c85a', green: '#ccee80', green2: '#bce272', sand: '#ffdca4', water: 0x3aa6d0, line: '#7a3a1e', tree: 'cactus', leaf: [0x4a9a5a, 0x5aaa62], trunk: 0x4a9a5a, hill: 0xb85c36, sun: 0xffd8b0 },
+  cliff: { sky: ['#2f8fe8', '#cdeeff'], fog: 0xcdeeff, rough: '#5aa86a', rough2: '#4f9c60', fair: '#88d874', fair2: '#7acc66', green: '#b8f290', green2: '#a8e680', sand: '#c9c0b0', water: 0x1a7ad0, line: '#2a5a40', tree: 'pine', leaf: [0x2f6e52, 0x3f8262], trunk: 0x5e4434, hill: 0x8a9aa8, sun: 0xffffff, sea: '#1a5ea8' },
+  glacier: { sky: ['#6aa8e8', '#e6f6ff'], fog: 0xe6f6ff, rough: '#e2ecf6', rough2: '#d2e0ee', fair: '#9cd8a8', fair2: '#8ecc9a', green: '#bdf0c0', green2: '#ade4b2', sand: '#efe4c4', water: 0x4aa0e0, line: '#6a88a8', tree: 'pine', leaf: [0x2a6a5a, 0x387a68], trunk: 0x5a4436, hill: 0xcfe0f0, sun: 0xffffff, ice: '#bfe9ff', fx: 'snow' },
+  lava: { sky: ['#2a0e1a', '#ff7a3a'], fog: 0x6a2c28, rough: '#4c3e3c', rough2: '#403432', fair: '#7ea25c', fair2: '#729652', green: '#a6d27c', green2: '#98c670', sand: '#b09888', water: 0xff6a1a, line: '#1e1414', tree: 'pine', leaf: [0x34403a, 0x404c40], trunk: 0x2a1e1a, hill: 0x3c2828, sun: 0xffb080, light: [1.25, 1.35], sea: '#ff5a10', glow: 0xff4a00, hazard: 'lava', fx: 'embers' },
+  candy: { sky: ['#ff9ad8', '#fff0fa'], fog: 0xfff0fa, rough: '#f4a8d0', rough2: '#ec98c4', fair: '#9ee8c8', fair2: '#8cdcba', green: '#c4f6a0', green2: '#b4ec90', sand: '#fff6fb', water: 0x8a5a3a, line: '#a0407a', tree: 'round', leaf: [0xff5a9a, 0x5ad2ff, 0xffe14a, 0x9a6aff], trunk: 0xfff4f8, hill: 0xffb0e0, sun: 0xffffff, sea: '#6a3a1e' },
+  bamboo: { sky: ['#5cc4a4', '#e8ffe8'], fog: 0xd8f4dc, rough: '#4a9a4a', rough2: '#408e40', fair: '#86d468', fair2: '#78c85c', green: '#b4f084', green2: '#a4e476', sand: '#f2e2a8', water: 0x3ab8c8, line: '#245a28', tree: 'bamboo', leaf: [0x5aba4a, 0x70c85a], trunk: 0x7ac25a, hill: 0x5aa070, sun: 0xfff8e0 },
+  sky: { sky: ['#4a8cff', '#ffffff'], fog: 0xeaf4ff, rough: '#5ab86a', rough2: '#50ac60', fair: '#8ee070', fair2: '#80d462', green: '#bcf48c', green2: '#ace87e', sand: '#f6e8b8', water: 0xf6fbff, line: '#2a6a3a', tree: 'round', leaf: [0x4ab85a, 0x62cc6a], trunk: 0x8a5a3a, hill: 0xdfeeff, sun: 0xffffff, sea: '#dcecff', hazard: 'sky' },
 }
 
 export const HOLES = [
@@ -47,4 +60,35 @@ export const HOLES = [
     fair: [{ w: 20, pts: [[3, -72], [8, -112]] }, { w: 20, pts: [[-16, -168], [-22, -200]] }], pads: [[9, -121, 3.6]],
     movers: [[10, -254, 7, 2.8, 4, 0]], bunker: [[24, -262, 4, 5, 0], [-12, -110, 5, 4, 0], [-30, -180, 4, 6, 0]],
     hills: [[18, -90, 10, 2.4], [-28, -196, 10, 2.6]], trees: 22 },
+  // ---- back nine: narrower gold band, wind that changes every shot, sloped greens, long grass beside the fairway
+  { name: 'h10', par: 4, theme: 'night', band: 0.034, gust: [1, 3], rough: 0.78, wind: [0, 0], bounds: [-44, 44, -196, 14], pin: [-2, -168], green: [11, 10, 0], slope: [0.05, -0.03],
+    fair: [{ w: 18, pts: [[0, -6], [3, -70], [-2, -142]] }], bunker: [[-14, -100, 5, 4, 0], [12, -160, 4, 4, 0], [-14, -179, 4, 3, 0.3]],
+    hills: [[-28, -60, 14, 3], [28, -120, 15, 3], [-26, -150, 12, 2.4]], trees: 30 },
+  { name: 'h11', par: 4, theme: 'blossom', band: 0.032, gust: [1, 4], rough: 0.76, wind: [0, 0], bounds: [-92, 30, -160, 14], pin: [-62, -130], green: [11, 10, 0.3], slope: [-0.06, 0.035],
+    fair: [{ w: 17, pts: [[0, -6], [0, -80], [-22, -116], [-48, -128]] }], water: [[-30, -84, 13, 12, 0.2]],
+    bunker: [[-52, -143, 5, 4, 0], [-77, -121, 4, 5, 0], [9, -94, 5, 5, 0]], hills: [[22, -40, 14, 3], [-70, -60, 16, 3], [-20, -150, 12, 2.6]], trees: 60 },
+  { name: 'h12', par: 4, theme: 'canyon', band: 0.03, gust: [2, 4], rough: 0.74, wind: [0, 0], bounds: [-40, 40, -210, 14], pin: [4, -184], green: [10, 9, 0], slope: [0.07, 0.035],
+    fair: [{ w: 15, pts: [[0, -6], [0, -76]] }, { w: 15, pts: [[0, -100], [4, -162]] }], water: [[0, -88, 60, 5, 0]],
+    bunker: [[-10, -175, 4, 3, 0], [16, -194, 4, 3, 0]], hills: [[-31, -40, 14, 7], [31, -70, 14, 8], [-30, -130, 14, 8], [31, -160, 13, 7], [-28, -195, 12, 6]], trees: 16 },
+  { name: 'h13', par: 3, theme: 'cliff', band: 0.028, gust: [2, 5], rough: 0.72, wind: [0, 0], base: 'water', bounds: [-46, 46, -146, 16], pin: [6, -118], green: [10, 9, 0], slope: [0.06, 0.06],
+    land: [[0, 1, 13, 12, 0], [5, -116, 18, 16, 0], [-23, -62, 10, 9, 0.3]], fair: [], bunker: [[-7, -108, 4, 3, 0.4], [17, -110, 3.5, 3, 0.3]],
+    hills: [[5, -118, 15, 3.2]], trees: 9 },
+  { name: 'h14', par: 4, theme: 'glacier', band: 0.026, gust: [2, 5], rough: 0.72, wind: [0, 0], bounds: [-42, 42, -200, 14], pin: [0, -172], green: [11, 10, 0], slope: [-0.07, 0.06],
+    fair: [{ w: 18, pts: [[0, -6], [0, -150]] }], ice: [[0, -74, 11, 9, 0], [-3, -136, 9, 7, 0.3]], water: [[22, -110, 9, 14, 0]],
+    bunker: [[-15, -165, 4, 4, 0], [14, -180, 4, 3, 0]], hills: [[-28, -60, 14, 4], [28, -155, 14, 4], [-28, -190, 12, 3]], trees: 30 },
+  { name: 'h15', par: 5, theme: 'lava', band: 0.024, gust: [3, 5], rough: 0.7, wind: [0, 0], bounds: [-44, 44, -292, 14], pin: [2, -264], green: [12, 11, 0], slope: [0.075, -0.05],
+    fair: [{ w: 20, pts: [[0, -6], [0, -84]] }, { w: 20, pts: [[0, -104], [-6, -176]] }, { w: 20, pts: [[-4, -200], [2, -240]] }],
+    water: [[0, -94, 70, 5, 0], [0, -189, 70, 5, 0.05], [26, -152, 6, 9, 0]],
+    bunker: [[-15, -258, 5, 4, 0], [18, -273, 4, 4, 0]], hills: [[-31, -46, 13, 5], [31, -140, 14, 6], [-31, -232, 13, 5]], trees: 22 },
+  { name: 'h16', par: 4, theme: 'candy', band: 0.022, gust: [3, 6], rough: 0.7, wind: [0, 0], bounds: [-44, 44, -212, 14], pin: [0, -184], green: [11, 10, 0], slope: [0.05, 0.05], dome: 0.35,
+    fair: [{ w: 16, pts: [[0, -6], [-12, -60], [10, -120], [2, -164]] }], pads: [[-13, -64, 4]], boosts: [[10, -118, 4.5, -0.15, -1]],
+    bunker: [[9, -64, 5, 4, 0], [-11, -126, 5, 5, 0], [16, -180, 4, 4, 0], [-15, -194, 4, 3, 0]], hills: [[-24, -104, 10, 4], [22, -48, 10, 4], [25, -150, 10, 4]], trees: 28 },
+  { name: 'h17', par: 3, theme: 'bamboo', band: 0.02, gust: [3, 6], rough: 0.68, wind: [0, 0], bounds: [-40, 40, -150, 14], pin: [0, -126], green: [10, 9, 0], slope: [0.07, -0.05], dome: -0.3,
+    fair: [{ w: 16, pts: [[0, -6], [0, -106]] }], water: [[-20, -96, 9, 14, 0]], movers: [[0, -110, 8, 3, 4, 0], [0, -116, 8, 2.4, 4, 1.4]],
+    bunker: [[16, -118, 4, 4, 0], [-13, -139, 4, 3, 0]], hills: [[26, -60, 12, 3], [-26, -140, 12, 3]], trees: 44, grove: [[-26, -50, 10, 26], [27, -96, 10, 22]] },
+  { name: 'h18', par: 5, theme: 'sky', band: 0.018, gust: [3, 7], rough: 0.66, wind: [0, 0], base: 'water', bounds: [-58, 58, -300, 16], pin: [8, -270], green: [11, 10, 0], slope: [0.06, 0.06], dome: -0.3,
+    land: [[0, 1, 14, 13, 0], [8, -98, 22, 28, 0.15], [-16, -190, 21, 25, -0.2], [8, -268, 22, 20, 0]],
+    fair: [{ w: 18, pts: [[6, -76], [10, -116]] }, { w: 18, pts: [[-12, -172], [-18, -204]] }], pads: [[11, -124, 3.6]],
+    movers: [[8, -252, 7, 2.6, 4, 0]], bunker: [[22, -260, 4, 5, 0], [-4, -104, 4, 4, 0], [-28, -184, 4, 6, 0]],
+    hills: [[22, -92, 10, 2.4], [-26, -200, 10, 2.6]], trees: 22 },
 ]

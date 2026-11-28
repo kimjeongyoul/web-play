@@ -10,6 +10,7 @@ export const ORDER = ['chip', 'wedge', 'iron', 'wood', 'driver']
 export const SURF = {
   fairway: { e: 0.35, f: 0.55, mu: 7, lie: 1 }, green: { e: 0.28, f: 0.5, mu: 3.6, lie: 1 }, rough: { e: 0.24, f: 0.45, mu: 18, lie: 0.85 },
   bunker: { e: 0.06, f: 0.2, mu: 36, lie: 0.65 }, water: { e: 0, f: 0, mu: 50, lie: 1 },
+  ice: { e: 0.3, f: 0.8, mu: 1.8, lie: 1 }, // back nine: a frozen patch, the ball slides on
 }
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
 export const ellD = (x, z, s) => {
@@ -24,8 +25,8 @@ const segD = (x, z, a, b) => {
 
 // Everything the ball needs to know about one hole.
 export function makeCourse(H) {
-  const water = H.water || [], land = H.land || [], bunker = H.bunker || [], hills = H.hills || [], fair = H.fair || []
-  const pin = H.pin, green = [pin[0], pin[1], ...H.green], slope = H.slope || [0, 0], sea = H.base === 'water'
+  const water = H.water || [], land = H.land || [], bunker = H.bunker || [], ice = H.ice || [], hills = H.hills || [], fair = H.fair || []
+  const pin = H.pin, green = [pin[0], pin[1], ...H.green], slope = H.slope || [0, 0], dome = H.dome || 0, sea = H.base === 'water'
   const hillAt = (x, z) => { let y = 0; for (const h of hills) { const d2 = (x - h[0]) ** 2 + (z - h[1]) ** 2; y += h[3] * Math.exp(-d2 / (h[2] * h[2])) } return y }
   const greenY = hillAt(pin[0], pin[1])
   const landness = (x, z) => {
@@ -35,7 +36,7 @@ export function makeCourse(H) {
   const h = (x, z) => {
     let y = hillAt(x, z)
     const g = ellD(x, z, green)
-    if (g < 1.7) y += (greenY + slope[0] * (x - pin[0]) + slope[1] * (z - pin[1]) - y) * smooth(1.7, 1.05, g)
+    if (g < 1.7) y += (greenY + slope[0] * (x - pin[0]) + slope[1] * (z - pin[1]) + dome * (1 - Math.min(1, g * g)) - y) * smooth(1.7, 1.05, g) // dome > 0: crowned green, < 0: a bowl
     for (const s of bunker) { const d = ellD(x, z, s); if (d < 1) y -= 0.45 * smooth(1, 0.45, d) }
     const t = Math.hypot(x, z); if (t < 9) y *= smooth(3, 9, t) // the tee is flat
     const L = landness(x, z)
@@ -48,15 +49,18 @@ export function makeCourse(H) {
     if (wet(x, z)) return 'water'
     if (ellD(x, z, green) < 1) return 'green'
     for (const s of bunker) if (ellD(x, z, s) < 1) return 'bunker'
+    for (const s of ice) if (ellD(x, z, s) < 1) return 'ice'
     if (fairD(x, z) < 1 || (Math.abs(x) < 4 && Math.abs(z) < 3.2)) return 'fairway'
     return 'rough'
   }
+  // power kept when hitting from a lie: the back nine's long grass holds more (H.rough)
+  const lie = (name) => name === 'rough' && H.rough ? H.rough : SURF[name]?.lie ?? 1
   const B = H.bounds, out = (x, z) => x < B[0] || x > B[1] || z < B[2] || z > B[3]
   // places worth aiming at when the pin is too far: along the fairways and the middle of each island
   const spots = []
   for (const f of fair) for (let i = 0; i < f.pts.length - 1; i++) for (let k = 0; k <= 20; k++) spots.push([f.pts[i][0] + (f.pts[i + 1][0] - f.pts[i][0]) * k / 20, f.pts[i][1] + (f.pts[i + 1][1] - f.pts[i][1]) * k / 20])
   for (const s of land) spots.push([s[0], s[1]])
-  return { H, h, surf, wet, out, pin, green, greenY, landness, fairD, spots, sea, trees: [], time: 0, wx: H.wind[0], wz: H.wind[1],
+  return { H, h, surf, wet, lie, out, pin, green, greenY, landness, fairD, spots, sea, trees: [], time: 0, wx: H.wind[0], wz: H.wind[1],
     pads: H.pads || [], boosts: H.boosts || [], movers: H.movers || [] }
 }
 export const moverX = (m, t) => m[0] + m[2] * Math.sin((t / m[3]) * Math.PI * 2 + (m[5] || 0))
@@ -144,15 +148,15 @@ function special(b, C, ev) {
   return false
 }
 // launch speed for a club at power p (0..1) from a lie; the distance grows in a straight line with p
-export function launch(club, p, lie, dx, dz) {
-  const c = CLUBS[club], k = SURF[lie]?.lie ?? 1
+export function launch(club, p, lie, dx, dz, keep) {
+  const c = CLUBS[club], k = keep ?? SURF[lie]?.lie ?? 1
   if (club === 'putter') { const v = Math.sqrt(2 * SURF.green.mu * c.roll * p); return { vx: dx * v, vy: 0, vz: dz * v, mode: 'roll' } }
   const a = c.loft * Math.PI / 180, v = Math.sqrt(c.carry * k * p * G / Math.sin(2 * a))
   return { vx: dx * v * Math.cos(a), vy: v * Math.sin(a), vz: dz * v * Math.cos(a), mode: 'air' }
 }
 // play a shot without wind or moving things; returns where it first lands, where it stops and the path up to the landing
 export function preview(C, from, club, p, lie, dx, dz, maxT = 14) {
-  const b = { x: from.x, y: from.y, z: from.z, t: 0, ...launch(club, p, lie, dx, dz) }
+  const b = { x: from.x, y: from.y, z: from.z, t: 0, ...launch(club, p, lie, dx, dz, C.lie(lie)) }
   let first = null, used = false
   const path = []
   const ev = (n) => { if (n === 'pad' || n === 'boost') used = true; if (!first && (n === 'bounce' || n === 'water' || n === 'ob' || n === 'holed' || n === 'pad' || n === 'boost')) first = { x: b.x, y: b.y, z: b.z } }

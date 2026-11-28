@@ -3,16 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="build" content="f308d7b">
+<meta name="build" content="7598094">
 <title>Bonk Golf</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="style.css?v=f308d7b">
-<link rel="modulepreload" href="vendor/three.module.min.js?v=f308d7b">
-<link rel="modulepreload" href="game.js?v=f308d7b">
-<link rel="modulepreload" href="course.js?v=f308d7b">
-<link rel="modulepreload" href="holes.js?v=f308d7b">
-<link rel="modulepreload" href="text.js?v=f308d7b">
-<link rel="modulepreload" href="sound.js?v=f308d7b">
+<link rel="stylesheet" href="style.css?v=7598094">
+<link rel="modulepreload" href="vendor/three.module.min.js?v=7598094">
+<link rel="modulepreload" href="game.js?v=7598094">
+<link rel="modulepreload" href="course.js?v=7598094">
+<link rel="modulepreload" href="holes.js?v=7598094">
+<link rel="modulepreload" href="text.js?v=7598094">
+<link rel="modulepreload" href="sound.js?v=7598094">
 </head>
 <body>
 <canvas id="view"></canvas>
@@ -28,8 +28,9 @@
   <div class="info">
     <div class="chip"><small id="strokeLabel"></small><b id="strokeN">1</b></div>
     <div class="chip pin"><i class="flagIco"></i><b id="pinDist"></b></div>
-    <div class="chip wind"><small id="windLabel"></small><i id="windArrow"></i><b id="windNum">0</b></div>
+    <div class="chip wind" id="windBox"><small id="windLabel"></small><i id="windArrow"></i><b id="windNum">0</b></div>
   </div>
+  <div class="lieTag hide" id="lieTag"><i class="grassIco"></i><span id="lieText"></span></div>
   <div class="club" id="clubBox"><i class="clubIco"></i><div><b id="clubName"></b><small id="clubMax"></small></div></div>
   <button class="sub mull hide" id="mullBtn"></button>
   <div class="power hide" id="power"><i id="powerFill"></i><em id="powerBand"></em><b id="powerPct"></b></div>
@@ -41,14 +42,14 @@
 <div id="drag" class="hide"><i id="dragLine"></i><i id="dragKnob"></i></div>
 
 <section id="title" class="screen clear hide">
-  <div class="logo">BONK<br><span>GOLF</span></div>
-  <div class="bestBox"><small id="bestLabel"></small><b id="bestLine"></b><div class="mini" id="cardMini"></div></div>
-  <button class="go" id="playBtn"></button>
+  <div class="mapTop"><div class="logo">BONK<br><span>GOLF</span></div><div class="starBox"><i class="starIco"></i><b id="starTotal">0</b></div></div>
+  <div id="mapScroll"><div id="regions"></div></div>
+  <div class="mapBar"><button class="go" id="playBtn"></button></div>
   <button class="round" id="setBtn" aria-label="Settings"><span class="ico-gear"></span></button>
 </section>
 
 <section id="holeCard" class="screen clear hide">
-  <div class="hcBox"><b id="hcTitle"></b><small id="hcSub"></small><div class="hcTotal"><span id="hcTotalLabel"></span><b id="hcTotal"></b></div><button class="go" id="nextBtn"></button></div>
+  <div class="hcBox"><b id="hcTitle"></b><small id="hcSub"></small><div class="hcStars" id="hcStars"></div><small class="hcNote hide" id="hcNote"></small><div class="hcTotal"><span id="hcTotalLabel"></span><b id="hcTotal"></b></div><button class="go" id="nextBtn"></button><div class="hcRow"><button class="sub" id="retryBtn"></button><button class="sub" id="mapBtn"></button></div></div>
 </section>
 
 <section id="result" class="screen hide">
@@ -78,7 +79,7 @@
 <script>
 (function () {
   var started = false
-  function go() { if (started) return; started = true; var s = document.createElement('script'); s.type = 'module'; s.src = 'game.js?v=f308d7b'; document.body.appendChild(s) }
+  function go() { if (started) return; started = true; var s = document.createElement('script'); s.type = 'module'; s.src = 'game.js?v=7598094'; document.body.appendChild(s) }
   // The portal bridge is only loaded inside a portal (an iframe) or with ?bridge: a plain web address never reaches Playgama.
   var want = /[?&]bridge/.test(location.search) || (window.self !== window.top && !/[?&]nobridge/.test(location.search))
   if (!want) { window.__noBridge = true; go(); return }
