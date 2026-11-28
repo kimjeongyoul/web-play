@@ -1,9 +1,9 @@
 // Bonk Golf: nine silly holes, one drag. Pull back = power + aim, let go = BONK.
-import * as THREE from './vendor/three.module.min.js?v=1fc3160'
-import { TEXT, LANGUAGES } from './text.js?v=1fc3160'
-import { HOLES, THEMES } from './holes.js?v=1fc3160'
-import { audio } from './sound.js?v=1fc3160'
-import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=1fc3160'
+import * as THREE from './vendor/three.module.min.js?v=e047cb8'
+import { TEXT, LANGUAGES } from './text.js?v=e047cb8'
+import { HOLES, THEMES } from './holes.js?v=e047cb8'
+import { audio } from './sound.js?v=e047cb8'
+import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=e047cb8'
 
 const Q = new URLSearchParams(location.search)
 const BUILD = '2026-11-28'
