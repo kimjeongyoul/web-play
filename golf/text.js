@@ -17,6 +17,8 @@ export const TEXT = {
     lieRough: 'Rough', lieSand: 'Bunker', lieIce: 'Ice', lava: 'SIZZLE +1', fall: 'FALL +1',
     h19: 'Neon Arcade', h20: 'Toy Box', h21: 'Jungle Pipe', h22: 'Mushroom Hop', h23: 'Beach Bumpers', h24: 'Old Ruins', h25: 'Savanna Wind', h26: 'Crystal Cave', h27: 'Carnival Finale',
     r_r3: 'Holes 19–27 · Fun Park', cr3: 'Fun Park 9', bump: 'PING!', pipe: 'WHOOSH!',
+    h28: 'Gear Works', h29: 'Desert Draft', h30: 'Autumn Lift', h31: 'Star Base', h32: 'Harbor Belts', h33: 'Castle Gust', h34: 'Neon City', h35: 'Rainbow Road', h36: 'Storm Peak',
+    r_r4: 'Holes 28–36 · Sky Works', cr4: 'Sky Works 9', gust: 'GUST!',
   },
   ko: {
     play: '티오프', again: '한 판 더', home: '처음으로', settings: '설정', close: '닫기', paused: '일시정지', resume: '계속', quit: '라운드 끝내기',
@@ -34,5 +36,7 @@ export const TEXT = {
     lieRough: '러프', lieSand: '벙커', lieIce: '얼음', lava: '치익 +1', fall: '추락 +1',
     h19: '네온 오락실', h20: '장난감 상자', h21: '정글 파이프', h22: '버섯 통통', h23: '해변 범퍼', h24: '옛 유적', h25: '초원 바람', h26: '수정 동굴', h27: '축제 피날레',
     r_r3: '19–27홀 · 놀이 공원', cr3: '놀이 공원 9홀', bump: '핑!', pipe: '슝!',
+    h28: '톱니 공장', h29: '사막 바람', h30: '단풍 벨트', h31: '우주 기지', h32: '항구 벨트', h33: '성문 돌풍', h34: '네온 도시', h35: '무지개 길', h36: '폭풍 봉우리',
+    r_r4: '28–36홀 · 하늘 공장', cr4: '하늘 공장 9홀', gust: '휘잉!',
   },
 }

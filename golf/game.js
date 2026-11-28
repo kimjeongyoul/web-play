@@ -1,9 +1,9 @@
 // Bonk Golf: nine silly holes, one drag. Pull back = power + aim, let go = BONK.
-import * as THREE from './vendor/three.module.min.js?v=91a2c8f'
-import { TEXT, LANGUAGES } from './text.js?v=91a2c8f'
-import { HOLES, THEMES } from './holes.js?v=91a2c8f'
-import { audio } from './sound.js?v=91a2c8f'
-import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=91a2c8f'
+import * as THREE from './vendor/three.module.min.js?v=f942b2b'
+import { TEXT, LANGUAGES } from './text.js?v=f942b2b'
+import { HOLES, THEMES } from './holes.js?v=f942b2b'
+import { audio } from './sound.js?v=f942b2b'
+import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=f942b2b'
 
 const Q = new URLSearchParams(location.search)
 const BUILD = '2026-11-28'
@@ -35,7 +35,7 @@ let lang = Q.get('lang') || save.lang || ((navigator.language || 'en').toLowerCa
 if (!TEXT[lang]) lang = 'en'
 const t = (key) => TEXT[lang][key] ?? TEXT.en[key] ?? key
 // the three courses: [first hole index, last + 1]
-const COURSES = { front: [0, 9], back: [9, 18], full: [0, 18], r3: [18, 27] }
+const COURSES = { front: [0, 9], back: [9, 18], full: [0, 18], r3: [18, 27], r4: [27, 36] }
 const courseHoles = (c) => HOLES.slice(COURSES[c][0], COURSES[c][1])
 const coursePar = (c) => courseHoles(c).reduce((s, h) => s + h.par, 0)
 // the stage map: regions of nine holes, each with its own look. A region opens when the hole before it is cleared and the
@@ -44,6 +44,7 @@ const REGIONS = [
   { id: 'front', from: 0, to: 9, need: 0, bg: ['#5fc0ff', '#8fdc5a'] },
   { id: 'back', from: 9, to: 18, need: 6, bg: ['#24306e', '#ff9ab8'] },
   { id: 'r3', from: 18, to: 27, need: 20, bg: ['#6a2ab8', '#ffb04a'] },
+  { id: 'r4', from: 27, to: 36, need: 34, bg: ['#1a2a6a', '#4ae0ff'] },
 ]
 const regionOf = (i) => REGIONS.find((r) => i >= r.from && i < r.to) || REGIONS[0]
 const starsFor = (strokes, par) => strokes === 1 || strokes <= par - 2 ? 3 : strokes === par - 1 ? 2 : strokes === par ? 1 : 0
@@ -440,7 +441,7 @@ const powerRing = new THREE.Mesh(new THREE.RingGeometry(0.78, 1, 36).rotateX(-Ma
 // ---------------------------------------------------------------- one hole: ground picture, ground mesh, trees, toys
 let course = null, theme = THEMES.meadow
 const holeGroup = new THREE.Group(); scene.add(holeGroup)
-const live = { pads: [], boosts: [], movers: [], bumps: [], pipes: [], arrows: null, fx: null }
+const live = { pads: [], boosts: [], movers: [], bumps: [], pipes: [], belts: [], fans: [], arrows: null, fx: null }
 const TORUS = new THREE.TorusGeometry(1, 0.26, 10, 28).rotateX(-Math.PI / 2)
 function stepLive(now, dt) {
   const A = live.arrows
@@ -467,7 +468,7 @@ function stepLive(now, dt) {
 }
 function disposeHole() {
   holeGroup.traverse((o) => { if (o.geometry && !o.userData.keepGeo) o.geometry.dispose(); if (o.material && o.userData.ownMat) { o.material.map?.dispose(); o.material.dispose() } })
-  holeGroup.clear(); live.pads = []; live.boosts = []; live.movers = []; live.bumps = []; live.pipes = []; live.arrows = null; live.fx = null
+  holeGroup.clear(); live.pads = []; live.boosts = []; live.movers = []; live.bumps = []; live.pipes = []; live.belts = []; live.fans = []; live.arrows = null; live.fx = null
   for (const m of marks) m.visible = false
 }
 function paintGround(C, X0, Z0, W, L) {
@@ -550,6 +551,11 @@ function buildHole(index) {
   const free = (x, z, inside) => {
     if (Math.hypot(x, z) < 11 || (z > -5 && Math.abs(x) < 16) || ellD(x, z, C.green) < 1.7 || C.fairD(x, z) < 1.35 || C.surf(x, z) !== 'rough' || C.landness(x, z) < 0.999) return false
     for (const p of [...C.pads, ...C.boosts]) if (Math.hypot(x - p[0], z - p[1]) < p[2] + 3) return false
+    if (z < 0 && z > -30 && Math.abs(x) < 14) return false // the first look down the hole stays open
+    for (const u of C.bumpers) if (Math.hypot(x - u[0], z - u[1]) < u[2] + 3) return false
+    for (const q of C.pipes) if (Math.hypot(x - q[0], z - q[1]) < 4.5 || Math.hypot(x - q[2], z - q[3]) < 4.5) return false
+    for (const w of C.belts) if (Math.hypot(x - w[0], z - w[1]) < w[3] + 3) return false
+    for (const w of C.tunnels) if (Math.hypot(x - w[0], z - w[1]) < w[2] + 4) return false
     for (const m of C.movers) if (Math.abs(z - m[1]) < 4 && Math.abs(x - m[0]) < m[2] + m[4] + 2) return false
     for (const s of spots) if (Math.hypot(x - s.x, z - s.z) < (inside ? 4.2 : 3.2)) return false
     return true
@@ -671,6 +677,30 @@ function buildHole(index) {
     }
     live.pipes.push({ q, ends, kick: 0 })
   })
+  // belts: a dark strip with bright chevrons that slide the way it carries
+  for (const w of C.belts) {
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; const g = cv.getContext('2d')
+    g.fillStyle = '#2a3040'; g.fillRect(0, 0, 64, 64); g.strokeStyle = '#' + (theme.belt || 0xffc21e).toString(16).padStart(6, '0'); g.lineWidth = 9; g.lineCap = 'round'; g.lineJoin = 'round'
+    g.beginPath(); g.moveTo(12, 44); g.lineTo(32, 20); g.lineTo(52, 44); g.stroke()
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, w[3] / w[2])
+    const m = new THREE.Mesh(BOX, basic(0xffffff, { map: tex })); m.scale.set(w[2] * 2, 0.16, w[3] * 2); m.position.set(w[0], C.h(w[0], w[1]) + 0.02, w[1]); m.rotation.y = Math.atan2(-w[4], -w[5])
+    const rim = part(BOX, lam(0xc8ccd8), 0, 0, 0, 0); rim.scale.set(1.08, 0.7, 1.01); rim.position.y = -0.2; m.add(rim)
+    m.traverse((o) => { o.userData.keepGeo = true; o.userData.ownMat = true }); holeGroup.add(m); live.belts.push({ w, tex })
+  }
+  // wind tunnels: a fan on a post at the upwind edge and white streaks flying across the zone
+  for (const w of C.tunnels) {
+    const l = Math.hypot(w[3], w[4]), dx = w[3] / l, dz = w[4] / l, fx0 = w[0] - dx * (w[2] + 1.5), fz0 = w[1] - dz * (w[2] + 1.5), y0 = C.h(fx0, fz0)
+    const g = new THREE.Group(); g.position.set(fx0, y0, fz0); g.rotation.y = Math.atan2(dx, dz)
+    const post = part(CYL, lam(0xe8ecf4), 0, 2.2, 0, 0.04); post.scale.set(0.3, 4.4, 0.3)
+    const hub = part(SPH, lam(theme.fan || 0xff8a3a), 0, 4.6, 0.3, 0.04); hub.scale.setScalar(0.55)
+    const blades = new THREE.Group(); blades.position.set(0, 4.6, 0.25)
+    for (let i = 0; i < 3; i++) { const bl = part(SPH, lam(0xffffff), 0, 0, 0, 0.04); bl.scale.set(0.42, 1.7, 0.1); bl.position.set(Math.sin(i * 2.094) * 1.5, Math.cos(i * 2.094) * 1.5, 0); bl.rotation.z = -i * 2.094; blades.add(bl) }
+    const pad = new THREE.Mesh(CIRCLE, basic(theme.fan || 0xff8a3a, { transparent: true, opacity: 0.22, depthWrite: false })); pad.scale.setScalar(w[2]); pad.position.set(w[0], C.h(w[0], w[1]) + 0.06, w[1])
+    g.add(post, hub, blades); g.traverse((o) => { o.userData.keepGeo = true; o.userData.ownMat = o.material && o.material !== OUT }); pad.userData.keepGeo = true; pad.userData.ownMat = true
+    const streaks = []
+    for (let i = 0; i < 12; i++) { const s = new THREE.Mesh(SPH, basic(0xffffff, { transparent: true, opacity: 0.7, depthWrite: false })); s.userData.keepGeo = true; s.userData.ownMat = true; s.scale.set(0.07, 0.07, 1.1); s.rotation.y = Math.atan2(dx, dz); s.userData.k = [Math.random(), (Math.random() - 0.5) * 1.6 * w[2], 1 + Math.random() * 9]; holeGroup.add(s); streaks.push(s) }
+    holeGroup.add(g, pad); live.fans.push({ w, dx, dz, blades, streaks, kick: 0 })
+  }
   // sliding gates
   for (const mv of C.movers) {
     const cv = document.createElement('canvas'); cv.width = 128; cv.height = 32; const g = cv.getContext('2d')
@@ -853,6 +883,7 @@ function ballEvent(name, a, b) {
   } else if (name === 'ob') { pop(t('ob'), x, y + 2.4, z, 'bad'); audio.play('aw'); mood('sad', 2) }
   else if (name === 'pad') { const l = live.pads.find((q) => q.p === a); if (l) l.kick = 1; audio.play('boing'); pop(t('boing'), x, y + 2.2, z, 'gold'); ring(x, y, z, 1, a[2] * 1.6, 0.35, 0xff8aa0); burst(x, y + 0.6, z, 14, ['#ffffff', '#ff8aa0', '#ffe14a'], 5, 7, 0.14, 0.6); buzz(20) }
   else if (name === 'bump') { const l = live.bumps.find((q) => q.u === a); if (l) l.kick = 1; audio.play('pop', 1, 1.5); audio.play('boing', 0.5, 1.6); pop(t('bump'), x, y + 2.2, z, 'gold'); ring(x, y, z, 0.6, 3, 0.35, 0xffe14a); burst(x, y, z, 14, ['#ffffff', '#ffe14a', '#ff4ad0'], 6, 5, 0.12, 0.5); game.shake = Math.max(game.shake, 0.1); game.punch = Math.max(game.punch, 0.5); buzz(15) }
+  else if (name === 'tunnel') { const l = live.fans.find((q) => q.w === a); if (l) l.kick = 1; audio.play('whoosh', 1, 0.7); pop(t('gust'), x, y + 2, z, 'gold'); trailCol.set(0x9ae8ff) }
   else if (name === 'pipeIn') { const l = live.pipes.find((q) => q.q === a); if (l) l.kick = 1; audio.play('whoosh'); burst(x, y, z, 12, ['#ffffff', '#3fcf5a'], 3, 6, 0.12, 0.5) }
   else if (name === 'pipe') { audio.play('zoom', 1, 1.2); pop(t('pipe'), x, y + 2.4, z, 'gold'); trailPts.length = 0; burst(x, y, z, 22, ['#ffffff', '#ffe14a'], 7, 8, 0.14, 0.6); game.punch = Math.max(game.punch, 0.6); buzz(20) }
   else if (name === 'boost') { const l = live.boosts.find((q) => q.p === a); if (l) l.kick = 1; audio.play('zoom'); pop(t('zoom'), x, y + 2.2, z, 'gold'); trailCol.set(0xff8a1e); game.punch = Math.max(game.punch, 0.6); buzz(20) }
@@ -1232,6 +1263,9 @@ function frame(now) {
   // flag cloth waves, clouds drift, toys settle
   cloth.rotation.y = Math.sin(now * 0.004) * 0.35 + (course ? Math.atan2(-course.wz, course.wx) : 0)
   for (const c of clouds.children) { c.position.x += fx * 1.2; if (c.position.x > 300) c.position.x = -300 }
+  for (const l of live.belts) l.tex.offset.y = (l.tex.offset.y - fx * l.w[6] / (l.w[2] * 2)) % 1
+  for (const l of live.fans) { l.kick *= Math.exp(-3 * fx); l.blades.rotation.z -= fx * (9 + l.kick * 20); const w = l.w, y0 = course.h(w[0], w[1])
+    for (const s of l.streaks) { const k = s.userData.k; k[0] = (k[0] + fx * (0.55 + l.kick)) % 1; const a = (k[0] * 2 - 1) * w[2]; s.position.set(w[0] + l.dx * a - l.dz * k[1], y0 + k[2], w[1] + l.dz * a + l.dx * k[1]); s.material.opacity = Math.sin(k[0] * Math.PI) * 0.75 } }
   for (const l of live.bumps) { l.kick *= Math.exp(-7 * fx); const k = l.kick; l.g.scale.set(1 + k * 0.3, 1 - k * 0.18, 1 + k * 0.3); l.cap.material.color.setHex(k > 0.3 ? 0xffffff : (theme.bump || [0xff4a6a, 0xffd23a])[(live.bumps.indexOf(l) + 1) % 2]) }
   for (const l of live.pipes) { l.kick *= Math.exp(-6 * fx); for (const g of l.ends) g.scale.setScalar(1 + l.kick * 0.25) }
   for (const l of live.pads) { l.kick *= Math.exp(-6 * fx); l.g.scale.set(1 + l.kick * 0.25, 1 - l.kick * 0.5 * Math.cos(l.kick * 9), 1 + l.kick * 0.25) }
