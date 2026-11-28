@@ -1,0 +1,34 @@
+{
+	"$schema": "https://bridge.playgama.com/v2/stable/schema.json",
+	"advertisement": {
+		"interstitial": {
+			"preloadOnStart": true
+		},
+		"rewarded": {
+			"preloadOnStart": false
+		},
+		"useBuiltInErrorPopup": true,
+		"backfillId": ""
+	},
+	"payments": [],
+	"saas": {
+		"publicToken": "cmvzeg3qp020qlf0hie085v80",
+		"leaderboards": {
+			"platforms": ["playgama", "qa_tool"]
+		}
+	},
+	"leaderboards": [
+		{ "id": "top_score_town1" },
+		{ "id": "top_score_town2" },
+		{ "id": "top_score_town3" },
+		{ "id": "top_score_town4" },
+		{ "id": "top_score_town5" },
+		{ "id": "top_score_town6" },
+		{ "id": "top_score_town7" },
+		{ "id": "top_score_town8" },
+		{ "id": "top_score_town9" },
+		{ "id": "top_score_town10" },
+		{ "id": "biggest_hole" }
+	],
+	"sendAnalyticsEvents": true
+}

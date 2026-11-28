@@ -5,50 +5,86 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Gulp Town</title>
 <link rel="icon" href="data:,">
+<link rel="preload" as="image" href="img/loading_portrait.webp" fetchpriority="high" media="(max-aspect-ratio: 1/1)">
+<link rel="preload" as="image" href="img/loading_landscape.webp" fetchpriority="high" media="(min-aspect-ratio: 1/1)">
 <link rel="stylesheet" href="style.css">
+<link rel="modulepreload" href="game.js">
+<link rel="modulepreload" href="vendor/three.module.min.js">
+<link rel="modulepreload" href="models.js">
+<link rel="preload" as="fetch" href="models.bin.gz" crossorigin>
+<script>/* open the save store now, in parallel with the downloads (game.js idb.open uses it) */ try { window.__idbOpen = new Promise(function (res) { try { var r = indexedDB.open('gulp_town', 1); r.onupgradeneeded = function () { r.result.createObjectStore('kv') }; r.onsuccess = function () { res(r.result) }; r.onerror = r.onblocked = function () { res(null) }; setTimeout(function () { res(null) }, 6000) } catch (e) { res(null) } }) } catch (e) {}</script>
 </head>
 <body>
 <canvas id="view"></canvas>
 
 <div id="loading"><div class="brand">GULP<br>TOWN</div><div class="bar"><i id="loadbar"></i></div></div>
+<div id="talk" class="hide"><img src="img/baekho_face.webp" alt=""><p id="talkText"></p></div>
 
 <div id="hud" class="hide">
   <div class="time" id="time">60</div>
   <div class="score"><b id="score">0</b><small id="sizeText"></small></div>
   <div class="eaten"><i id="eatenBar"></i><span id="eatenText"></span></div>
   <button class="round" id="pauseBtn" aria-label="Pause"><span class="ico-pause"></span></button>
+  <div class="goalHud hide" id="goalHud"><b></b><span class="bar"><i></i></span><small></small></div>
+  <div class="obj hide" id="obj"><img alt=""><small id="objText"></small></div>
+  <div class="objIntro" id="objIntro"><small></small><img alt=""><b></b></div>
+  <div class="fxRow" id="fxRow"></div>
   <div class="combo" id="combo"></div>
   <div class="banner" id="banner"></div>
   <div class="hint" id="hint"></div>
+  <div class="helpRing hide" id="helpRing"><button class="helpBtn" id="helpBtn"></button></div>
 </div>
 <div id="float"></div>
+<section id="shot" class="hide"><div class="shotBox"><small id="shotLabel"></small><b id="shotNum">0</b><div class="shotHp"><i id="shotHpBar"></i><span id="shotHpText"></span></div></div><div class="shotSkip" id="shotSkip"></div></section>
 
 <section id="title" class="screen hide">
   <div class="logo">GULP<br>TOWN</div>
+  <div class="shelf" id="shelf" aria-label="Trophies"></div>
+  <div class="lobbySlot" id="lobbySlot"><div id="lobbyRank" class="lobby hide"><div class="lobbyHead"><b id="lobbyTitle"></b><div class="lobbyTabs" id="lobbyTabs"></div><button class="lobbyMore" id="lobbyMore" aria-label="More"><i></i></button></div><ol class="lobbyList" id="lobbyList"></ol><ol class="lobbyList lobbyMe" id="lobbyMe"></ol></div></div>
   <div class="townPick">
     <button class="nav" id="prevTown">&lsaquo;</button>
-    <div class="town"><b id="townName"></b><span class="stars" id="townStars"></span><small id="townLock"></small></div>
+    <div class="town" id="townCard"><em class="new hide" id="townNew">NEW</em><b id="townName"></b><span class="stars" id="townStars"></span><small id="townLock"></small><div class="lmBar hide" id="townLm"><small></small><span><i></i><b></b></span></div><div class="dex hide" id="townDex"></div></div>
     <button class="nav" id="nextTown">&rsaquo;</button>
   </div>
   <button class="go" id="playBtn"></button>
   <div class="row">
     <button class="sub" id="upBtn"></button>
     <button class="sub" id="skinBtn"></button>
+    <button class="round hide" id="titleRank" aria-label="Leaderboard"><span class="ico-cup"></span></button>
     <button class="round" id="setBtn" aria-label="Settings"><span class="ico-gear"></span></button>
   </div>
   <div class="gold"><span class="coin"></span><b id="goldTitle">0</b></div>
+  <button class="round goalBtn" id="goalBtn" aria-label="Goals"><span class="ico-goal"></span><small id="goalCount">0/3</small><i class="goalDot hide" id="goalDot"></i></button>
 </section>
 
 <section id="result" class="screen hide">
   <h2 id="resTitle"></h2>
   <div class="stars big" id="resStars"></div>
+  <p class="paper hide" id="resPaper"></p>
+  <div class="newTown hide" id="resNew"></div>
+  <div class="nextGoal hide" id="resNext"></div>
   <div class="resLine"><span id="resEatenLabel"></span><b id="resEaten"></b></div>
   <div class="resLine"><span id="resBestLabel"></span><b id="resBest"></b></div>
-  <div class="gain"><span class="coin"></span><b id="resGold">0</b></div>
+  <div class="gain"><span class="coin"></span><b id="resGold">0</b><em class="resObj hide" id="resObj"></em></div>
   <button class="sub ad" id="doubleBtn"></button>
   <div id="resUp" class="upgrades"></div>
   <button class="go" id="againBtn"></button>
-  <button class="sub ghost" id="homeBtn"></button>
+  <button class="sub" id="homeBtn"></button>
+  <button class="round hide" id="rankBtn" aria-label="Leaderboard"><span class="ico-cup"></span></button>
+</section>
+
+<section id="rank" class="screen hide">
+  <h2 id="rankTitle"></h2>
+  <div class="rankTabs" id="rankTabs"></div>
+  <ol class="rankList" id="rankList"></ol>
+  <ol class="rankList rankMe" id="rankMe"></ol>
+  <button class="go" id="rankClose"></button>
+</section>
+
+<section id="news" class="screen hide">
+  <h2 id="newsTitle"></h2>
+  <div class="newsGrid" id="newsGrid"></div>
+  <button class="go" id="newsClose"></button>
 </section>
 
 <section id="panel" class="screen hide">
@@ -58,13 +94,40 @@
   <button class="go" id="panelClose"></button>
 </section>
 
+<section id="more" class="screen hide">
+  <div class="moreRing" id="moreRing"><button class="go ad" id="moreBtn"></button></div>
+  <button class="sub ghost" id="moreNo"></button>
+</section>
+
+<section id="cards" class="screen hide">
+  <h2 id="cardTitle"></h2>
+  <div class="cardRow" id="cardRow"></div>
+</section>
+
+<div id="toast"></div>
+<section id="attend" class="screen hide"><div class="attBox"><h2 id="attTitle"></h2><small id="attSub"></small><div class="attDays" id="attDays"></div><button class="go" id="attClaim"></button></div></section>
+<div id="trophyPop" class="hide"><div class="tpBox"><small id="tpLabel"></small><img id="tpImg" alt=""><b id="tpName"></b></div></div>
+
 <section id="pause" class="screen hide">
   <h2 id="pauseTitle"></h2>
+  <div id="pauseOpts"></div>
   <button class="go" id="resumeBtn"></button>
   <button class="sub" id="quitBtn"></button>
 </section>
 
-<script>window.__noBridge = true</script>
-<script type="module" src="game.js"></script>
+<script>
+(function () {
+  var started = false
+  function go() { if (started) return; started = true; var s = document.createElement('script'); s.type = 'module'; s.src = 'game.js'; document.body.appendChild(s) }
+  if (/[?&]nobridge/.test(location.search)) { window.__noBridge = true; go(); return }
+  function local() { var s = document.createElement('script'); s.src = 'playgama-bridge.js'; s.onload = go; s.onerror = go; document.head.appendChild(s) }
+  var cdn = document.createElement('script'), done = false
+  var timer = setTimeout(function () { if (!done) { done = true; local() } }, 2000)
+  cdn.src = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
+  cdn.onload = function () { if (!done) { done = true; clearTimeout(timer); go() } }
+  cdn.onerror = function () { if (!done) { done = true; clearTimeout(timer); local() } }
+  document.head.appendChild(cdn)
+})()
+</script>
 </body>
 </html>
