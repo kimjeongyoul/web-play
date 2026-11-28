@@ -42,8 +42,10 @@ export function makeCourse(H) {
     return L >= 1 ? y : -1.9 + (y + 1.9) * L
   }
   const fairD = (x, z) => { let d = 9; for (const f of fair) for (let i = 0; i < f.pts.length - 1; i++) d = Math.min(d, segD(x, z, f.pts[i], f.pts[i + 1]) / (f.w / 2)); return d }
+  // water is only where a pond, creek or the sea is: a bunker's dip can go below the water line on low ground and is still sand
+  const wet = (x, z) => landness(x, z) < 1 && h(x, z) < WATER_Y
   const surf = (x, z) => {
-    if (h(x, z) < WATER_Y) return 'water'
+    if (wet(x, z)) return 'water'
     if (ellD(x, z, green) < 1) return 'green'
     for (const s of bunker) if (ellD(x, z, s) < 1) return 'bunker'
     if (fairD(x, z) < 1 || (Math.abs(x) < 4 && Math.abs(z) < 3.2)) return 'fairway'
@@ -54,7 +56,7 @@ export function makeCourse(H) {
   const spots = []
   for (const f of fair) for (let i = 0; i < f.pts.length - 1; i++) for (let k = 0; k <= 20; k++) spots.push([f.pts[i][0] + (f.pts[i + 1][0] - f.pts[i][0]) * k / 20, f.pts[i][1] + (f.pts[i + 1][1] - f.pts[i][1]) * k / 20])
   for (const s of land) spots.push([s[0], s[1]])
-  return { H, h, surf, out, pin, green, greenY, landness, fairD, spots, sea, trees: [], time: 0, wx: H.wind[0], wz: H.wind[1],
+  return { H, h, surf, wet, out, pin, green, greenY, landness, fairD, spots, sea, trees: [], time: 0, wx: H.wind[0], wz: H.wind[1],
     pads: H.pads || [], boosts: H.boosts || [], movers: H.movers || [] }
 }
 export const moverX = (m, t) => m[0] + m[2] * Math.sin((t / m[3]) * Math.PI * 2 + (m[5] || 0))
@@ -65,6 +67,7 @@ export const MOVER_H = 3.4
 export function stepBall(b, dt, C, ev, real) {
   b.t += dt
   if (b.mode === 'air') {
+    if (b.t > 30) { b.vx = b.vy = b.vz = 0; b.y = C.h(b.x, b.z) + R; b.mode = C.wet(b.x, b.z) ? 'water' : C.out(b.x, b.z) ? 'ob' : 'rest'; return } // nothing flies for 30 s: never wait forever
     b.vy -= G * dt
     if (real) { b.vx += C.wx * WINDK * dt; b.vz += C.wz * WINDK * dt }
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt
@@ -82,7 +85,7 @@ export function stepBall(b, dt, C, ev, real) {
       }
     }
     const gh = C.h(b.x, b.z)
-    if (gh < WATER_Y) { if (b.y - R <= WATER_Y) { b.y = WATER_Y; b.mode = 'water'; ev && ev('water') } return }
+    if (C.wet(b.x, b.z)) { if (b.y - R <= WATER_Y) { b.y = WATER_Y; b.mode = 'water'; ev && ev('water') } return }
     if (b.y - R > gh) return
     b.y = gh + R
     const e = 0.4, gx = (C.h(b.x + e, b.z) - C.h(b.x - e, b.z)) / (2 * e), gz = (C.h(b.x, b.z + e) - C.h(b.x, b.z - e)) / (2 * e), nl = Math.hypot(gx, 1, gz)
@@ -111,7 +114,7 @@ export function stepBall(b, dt, C, ev, real) {
   b.x += b.vx * dt; b.z += b.vz * dt
   const gh = C.h(b.x, b.z); b.y = gh + R
   b.rolled = (b.rolled || 0) + sp * dt
-  if (gh < WATER_Y) { b.y = WATER_Y; b.mode = 'water'; ev && ev('water'); return }
+  if (C.wet(b.x, b.z)) { b.y = WATER_Y; b.mode = 'water'; ev && ev('water'); return }
   if (C.out(b.x, b.z)) { b.mode = 'ob'; ev && ev('ob'); return }
   if (special(b, C, ev)) return
   sp = Math.hypot(b.vx, b.vz)
@@ -150,9 +153,9 @@ export function launch(club, p, lie, dx, dz) {
 // play a shot without wind or moving things; returns where it first lands, where it stops and the path up to the landing
 export function preview(C, from, club, p, lie, dx, dz, maxT = 14) {
   const b = { x: from.x, y: from.y, z: from.z, t: 0, ...launch(club, p, lie, dx, dz) }
-  let first = null
+  let first = null, used = false
   const path = []
-  const ev = (n) => { if (!first && (n === 'bounce' || n === 'water' || n === 'ob' || n === 'holed' || n === 'pad' || n === 'boost')) first = { x: b.x, y: b.y, z: b.z } }
+  const ev = (n) => { if (n === 'pad' || n === 'boost') used = true; if (!first && (n === 'bounce' || n === 'water' || n === 'ob' || n === 'holed' || n === 'pad' || n === 'boost')) first = { x: b.x, y: b.y, z: b.z } }
   for (let i = 0; i < maxT * 60 && (b.mode === 'air' || b.mode === 'roll'); i++) { stepBall(b, 1 / 60, C, ev, false); if (!first && i % 3 === 0) path.push(b.x, b.y, b.z) }
-  return { first: first || { x: b.x, y: b.y, z: b.z }, end: b, path }
+  return { first: first || { x: b.x, y: b.y, z: b.z }, end: b, path, used }
 }

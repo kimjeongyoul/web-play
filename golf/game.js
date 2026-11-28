@@ -1,9 +1,9 @@
 // Bonk Golf: nine silly holes, one drag. Pull back = power + aim, let go = BONK.
-import * as THREE from './vendor/three.module.min.js'
-import { TEXT, LANGUAGES } from './text.js'
-import { HOLES, THEMES } from './holes.js'
-import { audio } from './sound.js'
-import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js'
+import * as THREE from './vendor/three.module.min.js?v=98ef7d1'
+import { TEXT, LANGUAGES } from './text.js?v=98ef7d1'
+import { HOLES, THEMES } from './holes.js?v=98ef7d1'
+import { audio } from './sound.js?v=98ef7d1'
+import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=98ef7d1'
 
 const Q = new URLSearchParams(location.search)
 const BUILD = '2026-11-28'
@@ -471,10 +471,26 @@ function setupShot() {
   const td = Math.max(0.01, dist2(ball.x, ball.z, target[0], target[1]))
   shot.club = club; shot.lie = lie; shot.target = target; shot.dir = { x: (target[0] - ball.x) / td, z: (target[1] - ball.z) / td }
   // the power that would stop closest to the target with no wind: the gold band on the power bar
-  let best = 1, bs = 1e9
-  const score = (p) => { const r = preview(C, ball, club, p, lie, shot.dir.x, shot.dir.z).end; return r.mode === 'holed' ? -1 : dist2(r.x, r.z, target[0], target[1]) + (r.mode === 'water' || r.mode === 'ob' ? 500 : 0) }
-  for (let p = 0.14; p <= 1.0001; p += 0.043) { const s = score(p); if (s < bs) { bs = s; best = p } }
-  for (let p = best - 0.03; p <= best + 0.031; p += 0.01) { if (p > 1 || p < 0.1) continue; const s = score(p); if (s < bs) { bs = s; best = p } }
+  // a trampoline or speed arrow on the way does not count as the plan (wind moves the ball off it): +40
+  const score = (p) => { const pv = preview(C, ball, club, p, lie, shot.dir.x, shot.dir.z), r = pv.end; return r.mode === 'holed' ? -1 : dist2(r.x, r.z, target[0], target[1]) + (r.mode === 'water' || r.mode === 'ob' ? 500 : 0) + (C.surf(r.x, r.z) === 'bunker' ? 10 : 0) + (pv.used ? 40 : 0) }
+  const solve = () => { let best = 1, bs = 1e9
+    for (let p = 0.14; p <= 1.0001; p += 0.043) { const s = score(p); if (s < bs) { bs = s; best = p } }
+    for (let p = best - 0.03; p <= best + 0.031; p += 0.01) { if (p > 1 || p < 0.1) continue; const s = score(p); if (s < bs) { bs = s; best = p } }
+    return [best, bs] }
+  let [best, bs] = solve()
+  if (lie !== 'green') { // the club must really get there (uphill, out of a dip, over a creek): if its best shot stays far away, try the longer ones
+    const ok = ORDER.filter((c) => c !== 'putter' && (c !== 'driver' || shot.fromTee) && !(lie === 'bunker' && (c === 'driver' || c === 'wood'))), near = Math.max(4, td * 0.3)
+    for (let k = ok.indexOf(club) + 1; bs > near && k > 0 && k < ok.length; k++) { const keep = club; club = ok[k]; const [b2, s2] = solve(); if (s2 < bs) { best = b2; bs = s2; shot.club = club } else club = keep }
+    club = shot.club
+  }
+  if (bs >= 500 && lie !== 'green') { // every power on this line ends in water or out: aim at ground that can be reached instead
+    const cand = C.spots.map((sp) => ({ sp, d: dist2(ball.x, ball.z, sp[0], sp[1]), dp: dist2(sp[0], sp[1], pin[0], pin[1]) })).filter((c) => c.d > 3 && c.d <= reach(club, lie)).sort((a, b) => a.dp - b.dp).slice(0, 10)
+    for (const c of cand) {
+      const dx = (c.sp[0] - ball.x) / c.d, dz = (c.sp[1] - ball.z) / c.d; let b2 = 1, s2 = 1e9
+      for (let p = 0.14; p <= 1.0001; p += 0.043) { const r = preview(C, ball, club, p, lie, dx, dz).end, sc = dist2(r.x, r.z, c.sp[0], c.sp[1]) + (r.mode === 'water' || r.mode === 'ob' ? 500 : 0); if (sc < s2) { s2 = sc; b2 = p } }
+      if (s2 < 500) { best = b2; bs = s2; shot.target = c.sp; shot.dir = { x: dx, z: dz }; break }
+    }
+  }
   shot.ideal = clamp(best, 0.12, 0.985)
   shot.from = { x: ball.x, y: ball.y, z: ball.z }; shot.power = 0; shot.angle = 0; shot.dragging = false; shot.perfect = false
   placeGolfer(); swing.ang = 0; swing.twist = 0; swing.done = true; swing.t = -1; swing.cheer = 0
@@ -618,6 +634,13 @@ function finishHole(strokes) {
   writeSave(); syncHud()
   platform.track('hole_done', { hole: game.hole + 1, strokes, par: course.H.par })
 }
+// a ball must never rest where its next shot ends at once (in water, outside the course): move it to the nearest safe ground
+function safeSpot() {
+  if (!course.wet(ball.x, ball.z) && !course.out(ball.x, ball.z)) return
+  let best = [0, 0], bd = 1e9
+  for (const s of course.spots) { const d = dist2(ball.x, ball.z, s[0], s[1]); if (d < bd && !course.wet(s[0], s[1]) && !course.out(s[0], s[1])) { bd = d; best = s } }
+  ball.x = best[0]; ball.z = best[1]; ball.y = course.h(ball.x, ball.z) + R
+}
 function penalty() { // water / out: one stroke, back where the shot was hit
   game.strokes++; game.lastBad = true
   Object.assign(ball, { x: shot.from.x, y: shot.from.y, z: shot.from.z, vx: 0, vy: 0, vz: 0, mode: 'rest' }); shot.fromTee = shot.prev?.fromTee ?? false
@@ -627,7 +650,7 @@ function afterShot() {
   if (game.strokes >= course.H.par + 5) { // enough: pick the ball up and move on
     game.phase = 'holed'; game.pt = 0; game.result = 'pickup'; audio.play('aw'); banner(t('pickup'), `${t('hole')} ${game.hole + 1} · ${game.strokes} ${t('stroke')}`, 'meh', 2); finishHole(game.strokes); return
   }
-  const s = course.surf(ball.x, ball.z); game.canMull = !game.mullUsed && (game.lastBad || s === 'bunker') && (platform.ready || game.freeMull); game.lastBad = false
+  safeSpot(); const s = course.surf(ball.x, ball.z); game.canMull = !game.mullUsed && (game.lastBad || s === 'bunker') && (platform.ready || game.freeMull); game.lastBad = false
   setupShot()
 }
 function mulligan() {
@@ -912,6 +935,9 @@ if (DEBUG) window.__dbg = {
   auto: () => { if (game.state !== 'run') return game.state; if (game.phase === 'intro') game.pt = INTRO; if (game.phase === 'aim') { shot.power = shot.ideal; shot.angle = 0; shot.dragging = true; fire() } if (game.phase === 'card') nextHole(); return game.phase },
   holeIn: () => { ball.x = course.pin[0] + 1.2; ball.z = course.pin[1] + 0.2; ball.y = course.h(ball.x, ball.z) + R; shot.fromTee = false; setupShot() },
   put: (x, z) => { ball.x = x; ball.z = z; ball.y = course.h(x, z) + R; shot.fromTee = false; ball.mode = 'rest'; setupShot() },
+  drop: (x, z, vx = 0, vz = 0, vy = -14, hgt = 6) => { Object.assign(ball, { x, z, y: course.h(x, z) + R + hgt, vx, vy, vz, mode: hgt > 0 ? 'air' : 'roll', t: 0, bounces: 0 }); shot.fromTee = false; game.strokes++; game.phase = 'fly'; game.pt = 0 },
+  course: () => course,
+  pos: () => ({ x: ball.x, y: ball.y, z: ball.z, v: Math.hypot(ball.vx, ball.vy, ball.vz), mode: ball.mode, surf: course.surf(ball.x, ball.z), phase: game.phase, pt: game.pt, power: shot.power, ideal: shot.ideal, club: shot.club }),
   end: endRun, pause: pauseRun, resume: resumeRun, settings: () => $('setBtn').click(), mull: () => { game.canMull = true; syncHud() },
   lang: (l) => { lang = l; document.documentElement.lang = l; syncHud(); if (game.state === 'title') showTitle() },
 }
