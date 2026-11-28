@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Bonk Golf</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css?v=2">
+<link rel="modulepreload" href="vendor/three.module.min.js">
+<link rel="modulepreload" href="game.js">
+<link rel="modulepreload" href="course.js">
+<link rel="modulepreload" href="holes.js">
+<link rel="modulepreload" href="text.js">
+<link rel="modulepreload" href="sound.js">
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="flash"></div>
+<div id="loading"><div class="brand">BONK<br><span>GOLF</span></div><div class="bar"><i></i></div></div>
+
+<div id="hud" class="hide">
+  <div class="top">
+    <div class="holeBox"><b id="holeNo"></b><small id="holePar"></small></div>
+    <div class="dots" id="dots"></div>
+    <button class="round" id="pauseBtn" aria-label="Pause"><span class="ico-pause"></span></button>
+  </div>
+  <div class="info">
+    <div class="chip"><small id="strokeLabel"></small><b id="strokeN">1</b></div>
+    <div class="chip pin"><i class="flagIco"></i><b id="pinDist"></b></div>
+    <div class="chip wind"><small id="windLabel"></small><i id="windArrow"></i><b id="windNum">0</b></div>
+  </div>
+  <div class="club" id="clubBox"><i class="clubIco"></i><div><b id="clubName"></b><small id="clubMax"></small></div></div>
+  <button class="sub mull hide" id="mullBtn"></button>
+  <div class="power hide" id="power"><i id="powerFill"></i><em id="powerBand"></em><b id="powerPct"></b></div>
+  <div class="hint hide" id="hint"><i class="hand"></i><span id="hintText"></span></div>
+  <div class="skip hide" id="skip"></div>
+</div>
+<div id="banner"><b id="bannerText"></b><small id="bannerSub"></small></div>
+<div id="float"></div>
+<div id="drag" class="hide"><i id="dragLine"></i><i id="dragKnob"></i></div>
+
+<section id="title" class="screen clear hide">
+  <div class="logo">BONK<br><span>GOLF</span></div>
+  <div class="bestBox"><small id="bestLabel"></small><b id="bestLine"></b><div class="mini" id="cardMini"></div></div>
+  <button class="go" id="playBtn"></button>
+  <button class="round" id="setBtn" aria-label="Settings"><span class="ico-gear"></span></button>
+</section>
+
+<section id="holeCard" class="screen clear hide">
+  <div class="hcBox"><b id="hcTitle"></b><small id="hcSub"></small><div class="hcTotal"><span id="hcTotalLabel"></span><b id="hcTotal"></b></div><button class="go" id="nextBtn"></button></div>
+</section>
+
+<section id="result" class="screen hide">
+  <h2 id="resTitle"></h2>
+  <div class="resNew hide" id="resNew"></div>
+  <div class="table" id="resTable"></div>
+  <div class="resLine big"><span id="resTotalLabel"></span><b id="resTotal"></b></div>
+  <div class="resLine"><span id="resBestLabel"></span><b id="resBest"></b></div>
+  <button class="go" id="againBtn"></button>
+  <button class="sub" id="homeBtn"></button>
+</section>
+
+<section id="panel" class="screen hide">
+  <h2 id="panelTitle"></h2>
+  <div id="panelBody"></div>
+  <button class="go" id="panelClose"></button>
+</section>
+
+<section id="pause" class="screen hide">
+  <h2 id="pauseTitle"></h2>
+  <div id="pauseOpts"></div>
+  <button class="go" id="resumeBtn"></button>
+  <button class="sub" id="quitBtn"></button>
+</section>
+<div id="toast"></div>
+
+<script>
+(function () {
+  var started = false
+  function go() { if (started) return; started = true; var s = document.createElement('script'); s.type = 'module'; s.src = 'game.js'; document.body.appendChild(s) }
+  // The portal bridge is only loaded inside a portal (an iframe) or with ?bridge: a plain web address never reaches Playgama.
+  var want = /[?&]bridge/.test(location.search) || (window.self !== window.top && !/[?&]nobridge/.test(location.search))
+  if (!want) { window.__noBridge = true; go(); return }
+  function local() { var s = document.createElement('script'); s.src = 'playgama-bridge.js'; s.onload = go; s.onerror = go; document.head.appendChild(s) }
+  var cdn = document.createElement('script'), done = false
+  var timer = setTimeout(function () { if (!done) { done = true; local() } }, 2000)
+  cdn.src = 'https://bridge.playgama.com/v2/stable/playgama-bridge.js'
+  cdn.onload = function () { if (!done) { done = true; clearTimeout(timer); go() } }
+  cdn.onerror = function () { if (!done) { done = true; clearTimeout(timer); local() } }
+  document.head.appendChild(cdn)
+})()
+</script>
+</body>
+</html>
