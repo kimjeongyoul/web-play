@@ -1,9 +1,9 @@
 // Bonk Golf: nine silly holes, one drag. Pull back = power + aim, let go = BONK.
-import * as THREE from './vendor/three.module.min.js?v=7598094'
-import { TEXT, LANGUAGES } from './text.js?v=7598094'
-import { HOLES, THEMES } from './holes.js?v=7598094'
-import { audio } from './sound.js?v=7598094'
-import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=7598094'
+import * as THREE from './vendor/three.module.min.js?v=91a2c8f'
+import { TEXT, LANGUAGES } from './text.js?v=91a2c8f'
+import { HOLES, THEMES } from './holes.js?v=91a2c8f'
+import { audio } from './sound.js?v=91a2c8f'
+import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=91a2c8f'
 
 const Q = new URLSearchParams(location.search)
 const BUILD = '2026-11-28'
@@ -35,7 +35,7 @@ let lang = Q.get('lang') || save.lang || ((navigator.language || 'en').toLowerCa
 if (!TEXT[lang]) lang = 'en'
 const t = (key) => TEXT[lang][key] ?? TEXT.en[key] ?? key
 // the three courses: [first hole index, last + 1]
-const COURSES = { front: [0, 9], back: [9, 18], full: [0, 18] }
+const COURSES = { front: [0, 9], back: [9, 18], full: [0, 18], r3: [18, 27] }
 const courseHoles = (c) => HOLES.slice(COURSES[c][0], COURSES[c][1])
 const coursePar = (c) => courseHoles(c).reduce((s, h) => s + h.par, 0)
 // the stage map: regions of nine holes, each with its own look. A region opens when the hole before it is cleared and the
@@ -43,6 +43,7 @@ const coursePar = (c) => courseHoles(c).reduce((s, h) => s + h.par, 0)
 const REGIONS = [
   { id: 'front', from: 0, to: 9, need: 0, bg: ['#5fc0ff', '#8fdc5a'] },
   { id: 'back', from: 9, to: 18, need: 6, bg: ['#24306e', '#ff9ab8'] },
+  { id: 'r3', from: 18, to: 27, need: 20, bg: ['#6a2ab8', '#ffb04a'] },
 ]
 const regionOf = (i) => REGIONS.find((r) => i >= r.from && i < r.to) || REGIONS[0]
 const starsFor = (strokes, par) => strokes === 1 || strokes <= par - 2 ? 3 : strokes === par - 1 ? 2 : strokes === par ? 1 : 0
@@ -439,7 +440,8 @@ const powerRing = new THREE.Mesh(new THREE.RingGeometry(0.78, 1, 36).rotateX(-Ma
 // ---------------------------------------------------------------- one hole: ground picture, ground mesh, trees, toys
 let course = null, theme = THEMES.meadow
 const holeGroup = new THREE.Group(); scene.add(holeGroup)
-const live = { pads: [], boosts: [], movers: [], arrows: null, fx: null }
+const live = { pads: [], boosts: [], movers: [], bumps: [], pipes: [], arrows: null, fx: null }
+const TORUS = new THREE.TorusGeometry(1, 0.26, 10, 28).rotateX(-Math.PI / 2)
 function stepLive(now, dt) {
   const A = live.arrows
   if (A) for (let i = 0; i < A.pts.length; i++) {
@@ -465,7 +467,7 @@ function stepLive(now, dt) {
 }
 function disposeHole() {
   holeGroup.traverse((o) => { if (o.geometry && !o.userData.keepGeo) o.geometry.dispose(); if (o.material && o.userData.ownMat) { o.material.map?.dispose(); o.material.dispose() } })
-  holeGroup.clear(); live.pads = []; live.boosts = []; live.movers = []; live.arrows = null; live.fx = null
+  holeGroup.clear(); live.pads = []; live.boosts = []; live.movers = []; live.bumps = []; live.pipes = []; live.arrows = null; live.fx = null
   for (const m of marks) m.visible = false
 }
 function paintGround(C, X0, Z0, W, L) {
@@ -646,6 +648,29 @@ function buildHole(index) {
     const m = new THREE.Mesh(CIRCLE, basic(0xffffff, { map: tex, transparent: true })); m.userData.keepGeo = true; m.userData.ownMat = true
     m.scale.set(p[2], 1, p[2]); m.position.set(p[0], C.h(p[0], p[1]) + 0.08, p[1]); m.rotation.y = Math.atan2(-p[3], -p[4]); holeGroup.add(m); live.boosts.push({ p, m, kick: 0 })
   }
+  // pinball bumpers: a striped post with a lit cap; it jumps when hit
+  C.bumpers.forEach((u, i) => {
+    const col = theme.bump || [0xff4a6a, 0xffd23a], g = new THREE.Group(); g.position.set(u[0], C.h(u[0], u[1]), u[1])
+    const base = part(CYL, lam(0xffffff), 0, 0.12, 0, 0.04); base.scale.set(u[2] * 1.15, 0.24, u[2] * 1.15)
+    const post = part(CYL, lam(col[i % 2]), 0, 0.95, 0, 0.04); post.scale.set(u[2], 1.5, u[2])
+    const band = part(CYL, lam(0xffffff), 0, 1.0, 0, 0.04); band.scale.set(u[2] * 1.04, 0.32, u[2] * 1.04)
+    const cap = part(SPH, basic(col[(i + 1) % 2]), 0, 1.72, 0, 0.04); cap.scale.set(u[2] * 0.95, 0.42, u[2] * 0.95)
+    g.add(base, post, band, cap); g.traverse((o) => { o.userData.keepGeo = true; o.userData.ownMat = o.material && o.material !== OUT }); holeGroup.add(g); live.bumps.push({ u, g, cap, kick: 0 })
+  })
+  // pipes: two mouths of the same colour; the ball goes in one and shoots out of the other (the arrow shows which way)
+  C.pipes.forEach((q, i) => {
+    const col = [0x3fcf5a, 0xb05aff, 0xff8a1e][i % 3], ends = []
+    for (const [x, z, out] of [[q[0], q[1], false], [q[2], q[3], true]]) {
+      const g = new THREE.Group(), y = C.h(x, z); g.position.set(x, y, z)
+      const wall = part(CYL, lam(col), 0, 0.3, 0, 0.04); wall.scale.set(1.55, 0.6, 1.55)
+      const rim = part(TORUS, lam(col), 0, 0.62, 0, 0.04); rim.scale.setScalar(1.55)
+      const hole = new THREE.Mesh(CIRCLE, basic(0x10181a)); hole.scale.setScalar(1.3); hole.position.y = 0.63
+      g.add(wall, rim, hole)
+      if (out) { const ar = part(SPH, basic(0xffffff), 0, 0.66, 0, 0); ar.scale.set(1.1, 0.08, 0.42); ar.position.set(q[4] / Math.hypot(q[4], q[5]) * 3, 0.3, q[5] / Math.hypot(q[4], q[5]) * 3); ar.rotation.y = Math.atan2(-q[5], q[4]); g.add(ar) }
+      g.traverse((o) => { o.userData.keepGeo = true; o.userData.ownMat = o.material && o.material !== OUT }); holeGroup.add(g); ends.push(g)
+    }
+    live.pipes.push({ q, ends, kick: 0 })
+  })
   // sliding gates
   for (const mv of C.movers) {
     const cv = document.createElement('canvas'); cv.width = 128; cv.height = 32; const g = cv.getContext('2d')
@@ -827,6 +852,9 @@ function ballEvent(name, a, b) {
     audio.play('splash'); game.shake = Math.max(game.shake, 0.12); buzz(40); pop(t(theme.hazard === 'lava' ? 'lava' : theme.hazard === 'sky' ? 'fall' : 'water'), x, y + 2.4, z, 'bad'); mood('surprise', 0.5); setTimeout(() => mood('sad', 1.8), 450)
   } else if (name === 'ob') { pop(t('ob'), x, y + 2.4, z, 'bad'); audio.play('aw'); mood('sad', 2) }
   else if (name === 'pad') { const l = live.pads.find((q) => q.p === a); if (l) l.kick = 1; audio.play('boing'); pop(t('boing'), x, y + 2.2, z, 'gold'); ring(x, y, z, 1, a[2] * 1.6, 0.35, 0xff8aa0); burst(x, y + 0.6, z, 14, ['#ffffff', '#ff8aa0', '#ffe14a'], 5, 7, 0.14, 0.6); buzz(20) }
+  else if (name === 'bump') { const l = live.bumps.find((q) => q.u === a); if (l) l.kick = 1; audio.play('pop', 1, 1.5); audio.play('boing', 0.5, 1.6); pop(t('bump'), x, y + 2.2, z, 'gold'); ring(x, y, z, 0.6, 3, 0.35, 0xffe14a); burst(x, y, z, 14, ['#ffffff', '#ffe14a', '#ff4ad0'], 6, 5, 0.12, 0.5); game.shake = Math.max(game.shake, 0.1); game.punch = Math.max(game.punch, 0.5); buzz(15) }
+  else if (name === 'pipeIn') { const l = live.pipes.find((q) => q.q === a); if (l) l.kick = 1; audio.play('whoosh'); burst(x, y, z, 12, ['#ffffff', '#3fcf5a'], 3, 6, 0.12, 0.5) }
+  else if (name === 'pipe') { audio.play('zoom', 1, 1.2); pop(t('pipe'), x, y + 2.4, z, 'gold'); trailPts.length = 0; burst(x, y, z, 22, ['#ffffff', '#ffe14a'], 7, 8, 0.14, 0.6); game.punch = Math.max(game.punch, 0.6); buzz(20) }
   else if (name === 'boost') { const l = live.boosts.find((q) => q.p === a); if (l) l.kick = 1; audio.play('zoom'); pop(t('zoom'), x, y + 2.2, z, 'gold'); trailCol.set(0xff8a1e); game.punch = Math.max(game.punch, 0.6); buzz(20) }
   else if (name === 'leaves') { burst(x, y, z, 18, theme.leaf.map((c) => '#' + c.toString(16).padStart(6, '0')), 4, 3, 0.2, 0.9, 7, 1); audio.play('leaves') }
   else if (name === 'wood') { audio.play('wood', clamp(a / 20, 0.3, 1)); burst(x, y, z, 6, ['#8a5a36', '#c9955a'], 3, 3, 0.1, 0.5) }
@@ -986,8 +1014,8 @@ function showTitleText() {
 function showRounds() {
   const host = $('panelBody'); host.innerHTML = ''; host.className = 'rounds'
   $('panelTitle').textContent = t('round'); $('panelClose').textContent = t('close')
-  for (const c of ['front', 'back', 'full']) {
-    const lock = c !== 'front' && !backOpen(), b = save.bestC[c], par = coursePar(c), btn = document.createElement('button')
+  for (const c of ['front', 'back', 'full', ...REGIONS.slice(2).map((r) => r.id)]) {
+    const R = REGIONS.find((r) => r.id === c), lock = c === 'full' ? !backOpen() : !regionOpen(R), b = save.bestC[c], par = coursePar(c), btn = document.createElement('button')
     btn.className = 'course' + (lock ? ' lock' : ''); btn.innerHTML = `<b>${t('c' + c)}</b><small>${t('par')} ${par}</small><em>${lock ? `<i class="lockIco"></i>${t('locked')}` : b ? `${t('best')} ${b} (${vsPar(b - par)})` : t('noBest')}</em>`
     btn.addEventListener('click', () => { if (lock) { audio.play('aw'); toast(t('locked')); return } audio.play('click'); $('panel').classList.add('hide'); startRun(c) })
     host.appendChild(btn)
@@ -1136,7 +1164,7 @@ function stepCamera(dt) {
   camera.position.copy(cam.pos)
   if (game.shake > 0.002 && save.shake) camera.position.add(v3.set(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(game.shake))
   camera.lookAt(cam.look)
-  if (game.camFix) { const f = game.camFix; camera.position.copy(golfer.localToWorld(v3.set(f[0], f[1], f[2]))); camera.lookAt(golfer.localToWorld(v2.set(f[3], f[4], f[5]))) } // ?debug: a close look at the golfer
+  if (game.camFix) { const f = game.camFix, W = (v) => (f[6] ? v : golfer.localToWorld(v)); camera.position.copy(W(v3.set(f[0], f[1], f[2]))); camera.lookAt(W(v2.set(f[3], f[4], f[5]))) } // ?debug: a close look at the golfer (7th value 1 = world coordinates)
   const fov = baseFov + game.punch * 7 - (game.phase === 'aim' && shot.dragging ? shot.power * 3 : 0)
   if (Math.abs(fov - camera.fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix() }
 }
@@ -1204,6 +1232,8 @@ function frame(now) {
   // flag cloth waves, clouds drift, toys settle
   cloth.rotation.y = Math.sin(now * 0.004) * 0.35 + (course ? Math.atan2(-course.wz, course.wx) : 0)
   for (const c of clouds.children) { c.position.x += fx * 1.2; if (c.position.x > 300) c.position.x = -300 }
+  for (const l of live.bumps) { l.kick *= Math.exp(-7 * fx); const k = l.kick; l.g.scale.set(1 + k * 0.3, 1 - k * 0.18, 1 + k * 0.3); l.cap.material.color.setHex(k > 0.3 ? 0xffffff : (theme.bump || [0xff4a6a, 0xffd23a])[(live.bumps.indexOf(l) + 1) % 2]) }
+  for (const l of live.pipes) { l.kick *= Math.exp(-6 * fx); for (const g of l.ends) g.scale.setScalar(1 + l.kick * 0.25) }
   for (const l of live.pads) { l.kick *= Math.exp(-6 * fx); l.g.scale.set(1 + l.kick * 0.25, 1 - l.kick * 0.5 * Math.cos(l.kick * 9), 1 + l.kick * 0.25) }
   if (course) stepLive(now, Math.min(0.05, raw))
   for (const l of live.boosts) { l.kick *= Math.exp(-5 * fx); const s = l.p[2] * (1 + l.kick * 0.3 + Math.sin(now * 0.006) * 0.04); l.m.scale.set(s, 1, s) }
@@ -1232,7 +1262,7 @@ if (DEBUG) window.__dbg = {
   game, shot, ball, save, platform, audio, swing,
   state: () => ({ state: game.state, phase: game.phase, hole: game.hole, strokes: game.strokes, scores: game.scores.slice(), club: shot.club, lie: shot.lie, ideal: shot.ideal, mode: ball.mode, time: game.time, info: renderer.info.memory }),
   start: (c) => startRun(c), course: (c) => setCourse(c),
-  hole: (i) => { if (game.single || i < game.first || i >= game.last) setCourse(i < 9 ? 'front' : 'back'); game.scores = []; game.state = 'run'; hideAll(); $('hud').classList.remove('hide'); loadHole(i); game.pt = INTRO },
+  hole: (i) => { if (game.single || i < game.first || i >= game.last) setCourse(regionOf(i).id); game.scores = []; game.state = 'run'; hideAll(); $('hud').classList.remove('hide'); loadHole(i); game.pt = INTRO },
   wind: (x, z) => { course.wx = x; course.wz = z; syncHud() },
   drag: (p, a = 0) => { shot.dragging = true; shot.power = p; shot.angle = a },
   shoot: (p, a = 0) => { if (game.phase !== 'aim') return false; shot.dragging = true; shot.power = p ?? shot.ideal; shot.angle = a; fire(); return true },

@@ -15,6 +15,8 @@ export const TEXT = {
     cfront: 'Front 9', cback: 'Back 9', cfull: '18 Holes', round: 'Full round', locked: 'Locked', lockBack: 'Clear the front 9 first', retry: 'Retry', map: 'Map',
     r_front: 'Front 9 · Sunny Hills', r_back: 'Back 9 · Wild Lands', needHole: 'Clear hole {n}', newStars: 'More stars!', opened: 'Opened:', parForStar: 'Par or better for a star',
     lieRough: 'Rough', lieSand: 'Bunker', lieIce: 'Ice', lava: 'SIZZLE +1', fall: 'FALL +1',
+    h19: 'Neon Arcade', h20: 'Toy Box', h21: 'Jungle Pipe', h22: 'Mushroom Hop', h23: 'Beach Bumpers', h24: 'Old Ruins', h25: 'Savanna Wind', h26: 'Crystal Cave', h27: 'Carnival Finale',
+    r_r3: 'Holes 19–27 · Fun Park', cr3: 'Fun Park 9', bump: 'PING!', pipe: 'WHOOSH!',
   },
   ko: {
     play: '티오프', again: '한 판 더', home: '처음으로', settings: '설정', close: '닫기', paused: '일시정지', resume: '계속', quit: '라운드 끝내기',
@@ -30,5 +32,7 @@ export const TEXT = {
     cfront: '전반 9홀', cback: '후반 9홀', cfull: '18홀', round: '라운드 돌기', locked: '잠김', lockBack: '전반 9홀을 먼저 깨요', retry: '다시', map: '지도',
     r_front: '전반 9홀 · 햇살 언덕', r_back: '후반 9홀 · 거친 땅', needHole: '{n}번 홀 깨기', newStars: '별 더 땄다!', opened: '열림:', parForStar: '파 이하면 별',
     lieRough: '러프', lieSand: '벙커', lieIce: '얼음', lava: '치익 +1', fall: '추락 +1',
+    h19: '네온 오락실', h20: '장난감 상자', h21: '정글 파이프', h22: '버섯 통통', h23: '해변 범퍼', h24: '옛 유적', h25: '초원 바람', h26: '수정 동굴', h27: '축제 피날레',
+    r_r3: '19–27홀 · 놀이 공원', cr3: '놀이 공원 9홀', bump: '핑!', pipe: '슝!',
   },
 }

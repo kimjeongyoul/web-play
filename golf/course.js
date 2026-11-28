@@ -61,7 +61,7 @@ export function makeCourse(H) {
   for (const f of fair) for (let i = 0; i < f.pts.length - 1; i++) for (let k = 0; k <= 20; k++) spots.push([f.pts[i][0] + (f.pts[i + 1][0] - f.pts[i][0]) * k / 20, f.pts[i][1] + (f.pts[i + 1][1] - f.pts[i][1]) * k / 20])
   for (const s of land) spots.push([s[0], s[1]])
   return { H, h, surf, wet, lie, out, pin, green, greenY, landness, fairD, spots, sea, trees: [], time: 0, wx: H.wind[0], wz: H.wind[1],
-    pads: H.pads || [], boosts: H.boosts || [], movers: H.movers || [] }
+    pads: H.pads || [], boosts: H.boosts || [], movers: H.movers || [], bumpers: H.bumpers || [], pipes: H.pipes || [], belts: H.belts || [], tunnels: H.tunnels || [] }
 }
 export const moverX = (m, t) => m[0] + m[2] * Math.sin((t / m[3]) * Math.PI * 2 + (m[5] || 0))
 export const MOVER_H = 3.4
@@ -74,7 +74,9 @@ export function stepBall(b, dt, C, ev, real) {
     if (b.t > 30) { b.vx = b.vy = b.vz = 0; b.y = C.h(b.x, b.z) + R; b.mode = C.wet(b.x, b.z) ? 'water' : C.out(b.x, b.z) ? 'ob' : 'rest'; return } // nothing flies for 30 s: never wait forever
     b.vy -= G * dt
     if (real) { b.vx += C.wx * WINDK * dt; b.vz += C.wz * WINDK * dt }
+    for (const w of C.tunnels) if (Math.hypot(b.x - w[0], b.z - w[1]) < w[2] && b.y < C.h(w[0], w[1]) + 14) { b.vx += w[3] * w[5] * dt; b.vz += w[4] * w[5] * dt; if (b.inTunnel !== w) { b.inTunnel = w; ev && ev('tunnel', w) } }
     b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt
+    if (C.bumpers.length && bump(b, C, ev)) return
     for (const t of C.trees) { // t = { x, z, by (ground), r (trunk), th (trunk height), cy, cr (crown) }
       const dx = b.x - t.x, dz = b.z - t.z, d = Math.hypot(dx, dz)
       if (d < t.r + R && b.y < t.by + t.th) {
@@ -112,10 +114,13 @@ export function stepBall(b, dt, C, ev, real) {
   const e = 0.4, gx = (C.h(b.x + e, b.z) - C.h(b.x - e, b.z)) / (2 * e), gz = (C.h(b.x, b.z + e) - C.h(b.x, b.z - e)) / (2 * e)
   const s = C.surf(b.x, b.z), mu = SURF[s].mu, slopeA = G * Math.hypot(gx, gz)
   let sp = Math.hypot(b.vx, b.vz)
-  if ((sp < 0.35 && slopeA < mu) || b.t > 30) { b.vx = b.vz = 0; b.mode = 'rest'; return }
+  if ((sp < 0.35 && slopeA < mu && !onBelt(b, C)) || b.t > 30) { b.vx = b.vz = 0; b.mode = 'rest'; return }
   if (sp > 1e-4) { const k = Math.max(0, sp - mu * dt) / sp; b.vx *= k; b.vz *= k }
   b.vx -= G * gx * dt; b.vz -= G * gz * dt
+  const belt = onBelt(b, C)
+  if (belt) { const want = belt[6], along = b.vx * belt[4] + b.vz * belt[5]; if (along < want) { const a = Math.min(want - along, 14 * dt); b.vx += belt[4] * a; b.vz += belt[5] * a } }
   b.x += b.vx * dt; b.z += b.vz * dt
+  if (C.bumpers.length && bump(b, C, ev)) return
   const gh = C.h(b.x, b.z); b.y = gh + R
   b.rolled = (b.rolled || 0) + sp * dt
   if (C.wet(b.x, b.z)) { b.y = WATER_Y; b.mode = 'water'; ev && ev('water'); return }
@@ -135,8 +140,37 @@ export function stepBall(b, dt, C, ev, real) {
     }
   }
 }
+// belts: [x, z, half width, half length, dx, dz, speed] - a strip that carries a rolling ball along (dx, dz)
+function onBelt(b, C) {
+  for (const w of C.belts) { const rx = b.x - w[0], rz = b.z - w[1], a = rx * w[4] + rz * w[5], c = -rx * w[5] + rz * w[4]; if (Math.abs(a) < w[3] && Math.abs(c) < w[2]) return w }
+  return null
+}
+// bumpers: [x, z, r] - a post that throws the ball back out faster (pinball)
+const BUMP_H = 1.8
+function bump(b, C, ev) {
+  for (const u of C.bumpers) {
+    const dx = b.x - u[0], dz = b.z - u[1], d = Math.hypot(dx, dz), gy = C.h(u[0], u[1])
+    if (d < u[2] + R && b.y < gy + BUMP_H + R) {
+      const nx = dx / (d || 1), nz = dz / (d || 1), vn = b.vx * nx + b.vz * nz
+      if (vn >= 0) continue
+      const sp = Math.hypot(b.vx, b.vz), out = Math.max(sp * 1.15, 15)
+      let tx = b.vx - vn * nx, tz = b.vz - vn * nz; tx *= 0.6; tz *= 0.6
+      const k = Math.sqrt(Math.max(0, out * out - tx * tx - tz * tz))
+      b.vx = tx + nx * k; b.vz = tz + nz * k; b.x = u[0] + nx * (u[2] + R + 0.02); b.z = u[1] + nz * (u[2] + R + 0.02)
+      if (b.mode === 'roll') { b.mode = 'air'; b.vy = 4; b.y += 0.05 }
+      ev && ev('bump', u); return true
+    }
+  }
+  return false
+}
 // trampolines and speed arrows
 function special(b, C, ev) {
+  // pipes: [ax, az, bx, bz, dx, dz] - into the mouth at a, out of the mouth at b flying along (dx, dz)
+  for (const q of C.pipes) if (Math.hypot(b.x - q[0], b.z - q[1]) < 1.7 && b.piped !== q) {
+    const sp = Math.max(Math.hypot(b.vx, b.vz), 14), l = Math.hypot(q[4], q[5])
+    ev && ev('pipeIn', q)
+    b.x = q[2] + q[4] / l * 1.8; b.z = q[3] + q[5] / l * 1.8; b.y = C.h(q[2], q[3]) + 1.2; b.vx = q[4] / l * sp; b.vz = q[5] / l * sp; b.vy = 7; b.mode = 'air'; b.piped = q; ev && ev('pipe', q); return true
+  }
   for (const p of C.pads) if (Math.hypot(b.x - p[0], b.z - p[1]) < p[2]) {
     const sp = Math.hypot(b.vx, b.vz) || 1, want = Math.max(sp, 17), dx = sp > 1 ? b.vx / sp : 0, dz = sp > 1 ? b.vz / sp : -1
     b.vx = dx * want; b.vz = dz * want; b.vy = 17; b.mode = 'air'; b.y += 0.05; ev && ev('pad', p); return true
@@ -159,7 +193,7 @@ export function preview(C, from, club, p, lie, dx, dz, maxT = 14) {
   const b = { x: from.x, y: from.y, z: from.z, t: 0, ...launch(club, p, lie, dx, dz, C.lie(lie)) }
   let first = null, used = false
   const path = []
-  const ev = (n) => { if (n === 'pad' || n === 'boost') used = true; if (!first && (n === 'bounce' || n === 'water' || n === 'ob' || n === 'holed' || n === 'pad' || n === 'boost')) first = { x: b.x, y: b.y, z: b.z } }
+  const ev = (n) => { if (n === 'pad' || n === 'boost' || n === 'pipe' || n === 'bump') used = true; if (!first && (n === 'bounce' || n === 'water' || n === 'ob' || n === 'holed' || n === 'pad' || n === 'boost' || n === 'pipeIn' || n === 'bump')) first = { x: b.x, y: b.y, z: b.z } }
   for (let i = 0; i < maxT * 60 && (b.mode === 'air' || b.mode === 'roll'); i++) { stepBall(b, 1 / 60, C, ev, false); if (!first && i % 3 === 0) path.push(b.x, b.y, b.z) }
   return { first: first || { x: b.x, y: b.y, z: b.z }, end: b, path, used }
 }
