@@ -166,6 +166,11 @@ body:has(#pause:not(.hide)) #holeCard, body:has(#panel:not(.hide)) #holeCard { v
 .course em { grid-column: 1 / -1; font-style: normal; font-size: .85em; color: #3a5a8a; }
 .course.lock { opacity: .6; }
 .course:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+/* short landscape screens: the round list (5 courses) goes two across so the title stays on screen */
+@media (orientation: landscape) and (max-height: 560px) {
+  #panelBody:has(> .course) { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #panelBody > .course { margin: 0; padding: 6px 12px; }
+}
 /* hole card: stars that pop in one by one */
 .hcStars { display: flex; gap: 6px; }
 .hcStars i { width: 38px; height: 38px; }
