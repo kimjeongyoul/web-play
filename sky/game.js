@@ -229,7 +229,7 @@ const stat = {
   get magnet() { return 140 * (1 + 0.5 * lvOf('magnet')) * (1 + 0.12 * mLv('magnet')) },
 }
 function resetRun() {
-  Object.assign(game, { time: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, sky: SIM ? +Q.get('sky') || 1 : Math.min(save.sky || 1, save.skyMax || 1), forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], hitBy: [], gold: 0, help: 0, helpUsed: 0, helpT: 0, snaps: {}, wantSnap: '', dread: 0, fled: 0, drop: null, tw: null })
+  Object.assign(game, { time: 0, _next: 0, wave: 1, waveT: 0, score: 0, kills: 0, level: 1, xp: 0, need: needFor(1), shake: 0, flash: 0, bossOn: false, cont: false, banner: null, later: null, sky: SIM ? +Q.get('sky') || 1 : Math.min(save.sky || 1, save.skyMax || 1), forms: 0, bossDone: false, bossN: 0, dealt: 0, hitAt: [], bossT: {}, bossFrom: 0, levelAt: [], hitBy: [], gold: 0, help: 0, helpUsed: 0, helpT: 0, snaps: {}, wantSnap: '', dread: 0, fled: 0, drop: null, tw: null })
   Object.assign(P, { x: W / 2, y: H * 0.8, lives: 3, inv: 1.5, hero: save.hero, fire: 0, supers: 1, guard: 0, guardT: 0 })
   foes = []; shots = []; ebul = []; gems = []; fx = []; nums = []; bolts = []; up = { main: 1 }
   timers = { missile: 0, lightning: 0, bomb: 6, drone: 0, wing: 0 }
