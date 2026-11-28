@@ -1,9 +1,9 @@
 // Bonk Golf: nine silly holes, one drag. Pull back = power + aim, let go = BONK.
-import * as THREE from './vendor/three.module.min.js?v=98ef7d1'
-import { TEXT, LANGUAGES } from './text.js?v=98ef7d1'
-import { HOLES, THEMES } from './holes.js?v=98ef7d1'
-import { audio } from './sound.js?v=98ef7d1'
-import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=98ef7d1'
+import * as THREE from './vendor/three.module.min.js?v=f308d7b'
+import { TEXT, LANGUAGES } from './text.js?v=f308d7b'
+import { HOLES, THEMES } from './holes.js?v=f308d7b'
+import { audio } from './sound.js?v=f308d7b'
+import { makeCourse, stepBall, preview, launch, CLUBS, ORDER, SURF, R, WATER_Y, CUP_R, moverX, MOVER_H, ellD } from './course.js?v=f308d7b'
 
 const Q = new URLSearchParams(location.search)
 const BUILD = '2026-11-28'
@@ -147,46 +147,133 @@ const cloth = new THREE.Mesh(flagGeo, basic(0xff4a4a, { side: THREE.DoubleSide }
 const knob = part(SPH, lam(0xffd23a), 0, 5.45, 0, 0.2); knob.scale.setScalar(0.16)
 flag.add(cupMesh, cupRim, pole, cloth, knob)
 
-// ---------------------------------------------------------------- the golfer: a round, chubby little person
+// ---------------------------------------------------------------- the golfer: a round chibi kid in a cap and polo
 // Local space: stands at x = GX facing +x (the ball is at the origin), the target is toward -z.
+// Toon look: three light steps (gradient map), a dark back-face outline of even thickness, a soft rim light so it reads on grass.
+const TOON_STEPS = new THREE.DataTexture(new Uint8Array([105, 190, 255]), 3, 1, THREE.RedFormat)
+TOON_STEPS.minFilter = TOON_STEPS.magFilter = THREE.NearestFilter; TOON_STEPS.needsUpdate = true
+const rimLight = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', 'float rimK = 1.0 - max(dot(normalize(vViewPosition), normal), 0.0);\noutgoingLight += vec3(1.0, 0.96, 0.86) * smoothstep(0.6, 0.95, rimK) * 0.3;\n#include <opaque_fragment>') }
+const toon = (color) => { const m = new THREE.MeshToonMaterial({ color, gradientMap: TOON_STEPS }); m.onBeforeCompile = rimLight; m.customProgramCacheKey = () => 'toonRim'; return m }
+const BALL = new THREE.SphereGeometry(1, 36, 26) // smooth: no facets on the round parts
+const LINE = 0.032 // outline thickness in metres
+// a mesh with an outline shell; hx/hy/hz = its half size along each axis (so thin parts get the same line as fat ones)
+function tp(geo, mat, x, y, z, sx, sy = sx, sz = sx, line = 1, hx = sx, hy = sy, hz = sz) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz)
+  if (line) { const o = new THREE.Mesh(geo, OUT); o.scale.set(1 + LINE * line / hx, 1 + LINE * line / hy, 1 + LINE * line / hz); m.add(o) }
+  return m
+}
 const golfer = new THREE.Group(); scene.add(golfer)
 const GX = -1.36, gBody = new THREE.Group(); gBody.position.x = GX; golfer.add(gBody)
-const gShadow = new THREE.Mesh(CIRCLE, basic(0x10301a, { transparent: true, opacity: 0.3, depthWrite: false })); gShadow.scale.set(0.85, 1, 0.85); gShadow.position.set(GX, 0.03, 0); golfer.add(gShadow)
-const gTwist = new THREE.Group(); gBody.add(gTwist)
-const SKIN = lam(0xffdcc0), SHIRT = lam(0xffc93a), PANTS = lam(0x3f6fe0), SHOE = lam(0xffffff), CAPM = lam(0xff5a4a), DARK = basic(0x2a2230)
+// soft contact shadow: a round blur painted once
+const softShadow = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 31); gr.addColorStop(0, 'rgba(0,0,0,.55)'); gr.addColorStop(0.55, 'rgba(0,0,0,.32)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; return tx })()
+const gShadow = new THREE.Mesh(CIRCLE, basic(0x10301a, { map: softShadow, transparent: true, opacity: 0.85, depthWrite: false })); gShadow.scale.set(1.05, 1, 0.95); gShadow.position.set(GX + 0.05, 0.04, 0); golfer.add(gShadow)
+const gHips = new THREE.Group(); gBody.add(gHips) // turns a little with the swing
+const gTwist = new THREE.Group(); gBody.add(gTwist) // shoulders, head and arms: turn all the way
+const C_SKIN = 0xffd9bc, C_SHIRT = 0xffc83a, C_TRIM = 0x2f4fc4, C_SHORTS = 0x2f4fc4, C_CAP = 0xff4f4f, C_WHITE = 0xffffff, C_HAIR = 0x6a3e24
+const SKIN = toon(C_SKIN), SHIRT = toon(C_SHIRT), TRIM = toon(C_TRIM), SHORTS = toon(C_SHORTS), CAPM = toon(C_CAP), WHITE = toon(C_WHITE), HAIR = toon(C_HAIR), SOLE = toon(0xff4f4f)
+const METAL = toon(0xc9d3de), GRIPM = toon(0x2a2f3a), DARK = basic(0x241c2a), PINK = basic(0xff8f9a, { transparent: true, opacity: 0.75 })
+const face = { mood: 'idle', hold: 0, blink: 2.5, blinkT: 0, eye: 1, brow: 0, happy: 0 }
 {
-  const add = (m, sx, sy, sz) => { m.scale.set(sx, sy, sz); gTwist.add(m); return m }
-  add(part(SPH, PANTS, 0, 0.62, 0), 0.66, 0.5, 0.62)                      // bottom
-  add(part(SPH, SHIRT, 0, 0.98, 0), 0.7, 0.62, 0.66)                      // belly
-  add(part(SPH, SHOE, 0.08, 0.13, 0.27), 0.3, 0.15, 0.2); add(part(SPH, SHOE, 0.08, 0.13, -0.27), 0.3, 0.15, 0.2) // feet
-  const head = new THREE.Group(); head.position.set(0.06, 1.86, 0); gTwist.add(head); golfer.userData.head = head
-  const sk = part(SPH, SKIN); sk.scale.setScalar(0.56); head.add(sk)
-  const cap = part(new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), CAPM, 0, 0.1, 0, 0.05); cap.scale.set(0.59, 0.5, 0.59); head.add(cap)
-  const visor = part(CYL, CAPM, 0.5, 0.16, 0, 0.1); visor.scale.set(0.36, 0.06, 0.4); head.add(visor)
-  const pom = part(SPH, lam(0xffffff), 0, 0.62, 0, 0.2); pom.scale.setScalar(0.1); head.add(pom)
+  // legs + shorts (hips)
+  gHips.add(tp(BALL, SHORTS, 0, 0.7, 0, 0.6, 0.38, 0.58))
+  for (const s of [-1, 1]) { const leg = new THREE.CapsuleGeometry(0.095, 0.2, 4, 14); gHips.add(tp(leg, SKIN, 0.05, 0.33, 0.27 * s, 1, 1, 1, 1, 0.095, 0.195, 0.095)) }
+  // shoes stay planted on the ground (body, not hips)
   for (const s of [-1, 1]) {
-    const eye = new THREE.Mesh(SPH, DARK); eye.scale.set(0.05, 0.08, 0.06); eye.position.set(0.52, -0.02, 0.2 * s); head.add(eye)
-    const cheek = new THREE.Mesh(SPH, basic(0xff9a9a)); cheek.scale.set(0.04, 0.07, 0.1); cheek.position.set(0.47, -0.2, 0.31 * s); head.add(cheek)
+    gBody.add(tp(CYL, WHITE, 0.06, 0.22, 0.28 * s, 0.11, 0.1, 0.11, 1, 0.11, 0.05, 0.11)) // sock
+    gBody.add(tp(CYL, TRIM, 0.06, 0.25, 0.28 * s, 0.113, 0.025, 0.113, 0)) // sock stripe
+    gBody.add(tp(BALL, SOLE, 0.13, 0.055, 0.29 * s, 0.3, 0.07, 0.19)) // sole
+    gBody.add(tp(BALL, WHITE, 0.12, 0.11, 0.29 * s, 0.27, 0.12, 0.17)) // shoe
+    gBody.add(tp(BALL, TRIM, 0.24, 0.15, 0.29 * s, 0.07, 0.035, 0.11, 0)) // laces
   }
-  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.028, 6, 12, Math.PI), DARK); mouth.rotation.set(Math.PI, Math.PI / 2, 0); mouth.position.set(0.54, -0.2, 0); head.add(mouth)
+  // polo shirt: belly, belt, collar, placket, buttons
+  gTwist.add(tp(BALL, SHIRT, 0, 1.02, 0, 0.62, 0.58, 0.6))
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(1, 0.075, 8, 32), toon(0x5a3a22)); belt.rotation.x = Math.PI / 2; belt.scale.set(0.565, 0.545, 0.7); belt.position.y = 0.72; gTwist.add(belt)
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.43, 0.065, 10, 36), WHITE); collar.rotation.x = Math.PI / 2; collar.scale.set(1, 1, 0.8); collar.position.set(0.02, 1.38, 0)
+  { const o = new THREE.Mesh(collar.geometry, OUT); o.scale.set(1.03, 1.03, 1.5); collar.add(o) } gTwist.add(collar)
+  for (const s of [-1, 1]) { const flap = tp(BALL, WHITE, 0.43, 1.31, 0.13 * s, 0.13, 0.04, 0.1, 1); flap.rotation.set(0.6 * s, 0, -1.0); gTwist.add(flap) }
+  gTwist.add(tp(BALL, WHITE, 0.56, 1.2, 0, 0.04, 0.12, 0.06, 0))
+  for (const [x, y] of [[0.585, 1.25], [0.6, 1.13]]) gTwist.add(tp(BALL, TRIM, x, y, 0, 0.022, 0.022, 0.022, 0))
+  // head: big and round (about 45% of the height), cap with brim, ears, hair at the back
+  const head = new THREE.Group(); head.position.set(0.06, 1.88, 0); gTwist.add(head); golfer.userData.head = head
+  head.add(tp(BALL, SKIN, 0, 0, 0, 0.58))
+  for (const s of [-1, 1]) head.add(tp(BALL, SKIN, -0.02, -0.04, 0.56 * s, 0.09, 0.12, 0.07))
+  for (const [x, y, z, r] of [[-0.42, -0.02, 0.18, 0.2], [-0.42, -0.02, -0.18, 0.2], [-0.3, -0.18, 0.36, 0.14], [-0.3, -0.18, -0.36, 0.14], [-0.5, -0.2, 0, 0.18]]) head.add(tp(BALL, HAIR, x, y, z, r, r, r, 1))
+  const dome = tp(new THREE.SphereGeometry(1, 36, 18, 0, Math.PI * 2, 0, Math.PI * 0.5), CAPM, 0, 0.19, 0, 0.6, 0.47, 0.6); head.add(dome)
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.615, 0.035, 8, 40), WHITE); band.rotation.x = Math.PI / 2; band.scale.setScalar(0.6 / 0.615); band.position.y = 0.19; head.add(band)
+  const brim = tp(new THREE.CylinderGeometry(1, 1, 1, 32, 1, false, Math.PI * 0.18, Math.PI * 0.64), CAPM, 0.14, 0.2, 0, 0.64, 0.05, 0.64, 1, 0.64, 0.025, 0.64); brim.rotation.z = 0.06; head.add(brim)
+  head.add(tp(BALL, WHITE, 0.47, 0.42, 0, 0.03, 0.1, 0.1, 0)) // cap badge
+  head.add(tp(BALL, CAPM, 0, 0.66, 0, 0.07, 0.05, 0.07, 1))  // top button
+  // face: big glossy eyes, brows, blush, mouths for each mood
+  const F = (y, z, r = 0.58) => Math.sqrt(Math.max(0, r * r - y * y - z * z))
+  face.eyes = []; face.joy = []; face.brows = []
+  for (const s of [-1, 1]) {
+    const e = new THREE.Group(); e.position.set(F(-0.06, 0.21) - 0.03, -0.06, 0.21 * s); e.rotation.y = -Math.asin(0.21 / 0.58) * s; head.add(e)
+    const pupil = new THREE.Mesh(BALL, DARK); pupil.scale.set(0.05, 0.15, 0.1); e.add(pupil)
+    const hi = new THREE.Mesh(BALL, basic(0xffffff)); hi.scale.setScalar(0.036); hi.position.set(0.04, 0.055, 0.025 * s); e.add(hi)
+    const hi2 = new THREE.Mesh(BALL, basic(0xffffff)); hi2.scale.setScalar(0.017); hi2.position.set(0.045, -0.05, -0.02 * s); e.add(hi2)
+    face.eyes.push(e)
+    const arc = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.022, 8, 16, Math.PI), DARK); arc.rotation.y = Math.PI / 2; arc.position.set(F(-0.06, 0.21) - 0.01, -0.06, 0.21 * s); arc.visible = false; head.add(arc); face.joy.push(arc)
+    const brow = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.09, 3, 8), DARK); brow.rotation.x = Math.PI / 2; const bg = new THREE.Group(); bg.position.set(F(0.13, 0.21) - 0.005, 0.13, 0.21 * s); bg.rotation.y = -Math.asin(0.21 / 0.58) * s; bg.add(brow); head.add(bg); face.brows.push(bg)
+    const cheek = new THREE.Mesh(BALL, PINK); cheek.scale.set(0.03, 0.07, 0.1); cheek.position.set(F(-0.21, 0.32) - 0.005, -0.21, 0.32 * s); cheek.rotation.y = -Math.asin(0.32 / 0.58) * s; head.add(cheek)
+  }
+  const mx = F(-0.26, 0) + 0.005
+  const mouth = (geo, rx, ry, rz) => { const m = new THREE.Mesh(geo, DARK); m.rotation.set(rx, ry, rz); m.position.set(mx, -0.26, 0); m.visible = false; head.add(m); return m }
+  face.mouths = {
+    smile: mouth(new THREE.TorusGeometry(0.085, 0.022, 8, 16, Math.PI), Math.PI, Math.PI / 2, 0),
+    frown: mouth(new THREE.TorusGeometry(0.07, 0.02, 8, 16, Math.PI), 0, Math.PI / 2, 0),
+    o: mouth(new THREE.TorusGeometry(0.045, 0.02, 8, 16), 0, Math.PI / 2, 0),
+    flat: mouth(new THREE.CapsuleGeometry(0.018, 0.08, 3, 8), Math.PI / 2, 0, 0),
+  }
+  { const open = new THREE.Mesh(new THREE.CircleGeometry(0.11, 24, Math.PI, Math.PI), basic(0x8a2a3a, { side: THREE.DoubleSide })); open.rotation.y = Math.PI / 2; open.position.set(mx - 0.012, -0.21, 0)
+    const tongue = new THREE.Mesh(new THREE.CircleGeometry(0.055, 16, Math.PI, Math.PI), basic(0xff7a8a, { side: THREE.DoubleSide })); tongue.position.set(0, -0.045, 0.002); open.add(tongue); open.visible = false; head.add(open); face.mouths.open = open }
 }
-// arms + club swing around the chest; at angle 0 the club head sits behind the ball
+// arms + club swing around the chest; at angle 0 the club head sits behind the ball. The club also hinges at the wrists.
 const gArms = new THREE.Group(); gArms.position.set(0.12, 1.2, 0); gTwist.add(gArms)
+const gClub = new THREE.Group(); gArms.add(gClub)
 {
-  const d = new THREE.Vector3(-GX - 0.12, -1.2, 0).normalize(), grip = d.clone().multiplyScalar(0.6), up = new THREE.Vector3(0, 1, 0)
+  const d = new THREE.Vector3(-GX - 0.12, -1.2, 0).normalize(), grip = d.clone().multiplyScalar(0.84), up = new THREE.Vector3(0, 1, 0)
+  gClub.position.copy(grip)
+  // shoulder -> elbow (around the round belly, never through it) -> hands on the grip
+  const limb = (a, b, r, mat) => { const v = b.clone().sub(a), L = v.length(), m = tp(new THREE.CapsuleGeometry(r, L, 4, 14), mat, 0, 0, 0, 1, 1, 1, 1, r, L / 2 + r, r); m.position.copy(a).addScaledVector(v, 0.5); m.quaternion.setFromUnitVectors(up, v.normalize()); gArms.add(m); return v }
   for (const s of [-1, 1]) {
-    const a = new THREE.Vector3(0.1, 0.05, 0.42 * s), v = grip.clone().sub(a), arm = part(CYL, SHIRT, 0, 0, 0, 0.12)
-    arm.scale.set(0.15, v.length(), 0.15); arm.position.copy(a).addScaledVector(v, 0.5); arm.quaternion.setFromUnitVectors(up, v.clone().normalize()); gArms.add(arm)
+    const sh = new THREE.Vector3(0.02, 0.16, 0.5 * s), el = new THREE.Vector3(0.44, -0.2, 0.42 * s), hand = grip.clone().add(new THREE.Vector3(0, 0, 0.05 * s))
+    const v = limb(sh, el, 0.11, SKIN); limb(el, hand, 0.1, SKIN)
+    gArms.add(tp(BALL, SKIN, el.x, el.y, el.z, 0.11, 0.11, 0.11, 0))
+    gArms.add(tp(BALL, SHIRT, sh.x + 0.02, sh.y - 0.02, sh.z * 0.94, 0.2, 0.2, 0.2))
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 8, 20), TRIM); cuff.position.copy(sh).addScaledVector(v, 0.17); cuff.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), v); gArms.add(cuff)
   }
-  const hand = part(SPH, SKIN, grip.x, grip.y, grip.z, 0.1); hand.scale.setScalar(0.19); gArms.add(hand)
-  const len = 1.12, shaft = part(CYL, lam(0xcfd8e0), 0, 0, 0, 0); shaft.scale.set(0.05, len, 0.05); shaft.position.copy(grip).addScaledVector(d, len / 2); shaft.quaternion.setFromUnitVectors(up, d)
-  { const o = new THREE.Mesh(CYL, OUT); o.scale.set(2, 1.01, 2); shaft.add(o) }
-  const headPos = grip.clone().addScaledVector(d, len + 0.05), ch = part(SPH, lam(0xff5a4a), headPos.x, headPos.y + 0.07, headPos.z, 0.1); ch.scale.set(0.24, 0.17, 0.4)
-  gArms.add(shaft, ch)
-  const tipO = new THREE.Object3D(), tipI = new THREE.Object3D(); tipO.position.copy(headPos).addScaledVector(d, 0.25); tipI.position.copy(grip).addScaledVector(d, 0.3); gArms.add(tipO, tipI); golfer.userData.tipO = tipO; golfer.userData.tipI = tipI
+  // hands on the grip: a white glove on top, the bare hand below it
+  gClub.add(tp(BALL, WHITE, 0, 0, 0, 0.14, 0.13, 0.14))
+  gClub.add(tp(BALL, SKIN, d.x * 0.16, d.y * 0.16, 0, 0.125, 0.12, 0.13))
+  const len = 0.92, at = (k) => d.clone().multiplyScalar(k)
+  const rubber = tp(CYL, GRIPM, 0, 0, 0, 0.055, 0.34, 0.055, 1, 0.055, 0.17, 0.055); rubber.position.copy(at(0.08)); rubber.quaternion.setFromUnitVectors(up, d); gClub.add(rubber)
+  const shaft = tp(CYL, METAL, 0, 0, 0, 0.026, len - 0.2, 0.026, 1, 0.026, (len - 0.2) / 2, 0.026); shaft.position.copy(at(0.2 + (len - 0.2) / 2)); shaft.quaternion.setFromUnitVectors(up, d); gClub.add(shaft)
+  const hosel = tp(CYL, CAPM, 0, 0, 0, 0.045, 0.1, 0.045, 1, 0.045, 0.05, 0.045); hosel.position.copy(at(len - 0.02)); hosel.quaternion.setFromUnitVectors(up, d); gClub.add(hosel)
+  const hp = at(len + 0.06), ch = tp(BALL, METAL, hp.x + 0.02, hp.y + 0.04, hp.z, 0.13, 0.1, 0.25); ch.rotation.z = -0.25; gClub.add(ch)
+  const plate = tp(BALL, GRIPM, hp.x + 0.02, hp.y + 0.04, hp.z - 0.12, 0.1, 0.075, 0.02, 0); gClub.add(plate)
+  const tipO = new THREE.Object3D(), tipI = new THREE.Object3D(); tipO.position.copy(at(len + 0.25)); tipI.position.copy(at(0.3)); gClub.add(tipO, tipI); golfer.userData.tipO = tipO; golfer.userData.tipI = tipI
+}
+// the pose from two numbers: arm angle (negative = wound up) and shoulder turn; hips follow 40%, wrists hinge the club
+function applyPose(ang, twist) {
+  gArms.rotation.x = ang; gTwist.rotation.y = twist; gHips.rotation.y = twist * 0.4
+  gClub.rotation.x = ang < 0 ? ang * 0.6 : Math.min(ang, 2.2) * 0.32
+}
+// moods: idle, focus (aiming), happy, wince, surprise, sad. A shown mood holds for a while, then the face goes back.
+function mood(m, hold = 1.8) { face.mood = m; face.hold = hold }
+function stepFace(dt) {
+  face.hold -= dt
+  const m = face.hold > 0 ? face.mood : swing.cheer > 0 ? 'happy' : game.phase === 'aim' && shot.dragging ? 'focus' : 'idle'
+  face.blink -= dt; if (face.blink < 0) { face.blinkT = 0.13; face.blink = rnd(2.2, 4.6) } face.blinkT -= dt
+  const T = { idle: [1, 0, 'smile'], focus: [0.72, 0.32, 'flat'], happy: [1, -0.25, 'open'], wince: [0.22, 0.4, 'frown'], surprise: [1.25, -0.4, 'o'], sad: [0.8, -0.45, 'frown'] }[m]
+  const k = 1 - Math.exp(-16 * dt)
+  face.eye = lerp(face.eye, T[0] * (face.blinkT > 0 && m !== 'happy' ? 0.08 : 1), face.blinkT > 0 ? 1 : k); face.brow = lerp(face.brow, T[1], k)
+  face.eyes.forEach((e, i) => { e.visible = m !== 'happy'; e.scale.y = face.eye; e.position.y = m === 'sad' ? -0.09 : -0.06 })
+  face.joy.forEach((a) => { a.visible = m === 'happy' })
+  face.brows.forEach((b, i) => { b.rotation.x = face.brow * (i ? -1 : 1); b.position.y = 0.13 + (m === 'surprise' ? 0.04 : 0) - Math.max(0, face.brow) * 0.03 })
+  for (const key in face.mouths) face.mouths[key].visible = key === T[2]
 }
 // swing state: ang = arm angle (negative = wound up), twist, squash (1 = normal) with a spring, hop
-const swing = { ang: 0, twist: 0, sq: 1, sqV: 0, hop: 0, t: -1, from: 0, power: 0, putt: false, done: true, idle: 0, cheer: 0 }
+const swing = { ang: 0, twist: 0, sq: 1, sqV: 0, hop: 0, t: -1, from: 0, power: 0, putt: false, done: true, idle: 0, cheer: 0, life: 0 }
 // the swoosh: a white fan the club head paints while it moves fast
 const SN = 40, swooshPts = [], swooshGeo = new THREE.BufferGeometry()
 swooshGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SN * 6), 3)); swooshGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(SN * 8), 4))
@@ -199,7 +286,7 @@ function stepSwoosh(dt) {
   if (da > 0.02 && da / Math.max(dt, 1e-4) > 6 && da < 3) { // only the fast forward part of a swing
     const n = Math.min(6, Math.ceil(da / 0.14))
     for (let i = 1; i <= n; i++) {
-      gArms.rotation.x = lerp(prevAng, swing.ang, i / n); gTwist.rotation.y = lerp(prevTwist, swing.twist, i / n); golfer.updateWorldMatrix(true, true)
+      applyPose(lerp(prevAng, swing.ang, i / n), lerp(prevTwist, swing.twist, i / n)); golfer.updateWorldMatrix(true, true)
       swooshPts.unshift({ o: golfer.userData.tipO.getWorldPosition(new THREE.Vector3()), i: golfer.userData.tipI.getWorldPosition(new THREE.Vector3()), age: dt * (1 - i / n) })
     }
   }
@@ -215,12 +302,21 @@ function stepSwoosh(dt) {
   swoosh.visible = n > 1; swooshGeo.attributes.position.needsUpdate = true; swooshGeo.attributes.color.needsUpdate = true
 }
 function poseGolfer(dt) {
-  stepSwoosh(dt)
+  stepSwoosh(dt); stepFace(dt)
   swing.sqV += (1 - swing.sq) * 260 * dt; swing.sqV *= Math.exp(-11 * dt); swing.sq += swing.sqV * dt
-  gArms.rotation.x = swing.ang; gTwist.rotation.y = swing.twist
-  const s = clamp(swing.sq, 0.7, 1.35), w = 1 / Math.sqrt(s)
+  applyPose(swing.ang, swing.twist)
+  swing.life += dt
+  const still = swing.done && swing.cheer <= 0, sad = still && face.hold > 0 && face.mood === 'sad'
+  const s = clamp(swing.sq, 0.7, 1.35) * (sad ? 0.94 : 1), w = 1 / Math.sqrt(s)
   gBody.scale.set(w, s, w); gBody.position.y = swing.hop
-  golfer.userData.head.rotation.y = clamp(-swing.twist * 0.75, -1.2, 1.2); golfer.userData.head.rotation.z = clamp(-swing.twist * 0.12, -0.25, 0.25)
+  // alive while standing: breathing, a slow weight shift; a slump when it went wrong; a spin when it went right
+  const k = 1 - Math.exp(-6 * dt)
+  gTwist.scale.y = 1 + (still ? Math.sin(swing.life * 2.6) * 0.014 : 0)
+  gBody.position.z = lerp(gBody.position.z, still && !shot.dragging ? Math.sin(swing.life * 0.9) * 0.035 : 0, k)
+  gTwist.rotation.z = lerp(gTwist.rotation.z, sad ? -0.13 : 0, k)
+  gBody.rotation.y = swing.cheer > 0 ? Math.PI * 2 * ease(clamp(swing.cheer / 0.75, 0, 1)) : 0
+  const head = golfer.userData.head, look = game.phase === 'aim' || game.phase === 'swing' ? -0.2 : sad ? -0.22 : swing.cheer > 0 ? 0.2 : -0.05
+  head.rotation.y = clamp(-swing.twist * 0.75, -1.2, 1.2); head.rotation.z = lerp(head.rotation.z, clamp(look - swing.twist * 0.12, -0.5, 0.3), k)
 }
 
 // ---------------------------------------------------------------- effects: particles, trail, rings, marks, popups
@@ -553,7 +649,7 @@ function impact() {
   if (!putt) { burst(ball.x, ball.y, ball.z, Math.round(8 + big * 16), lieCol, 5 + big * 5, 6 + big * 5, 0.16, 0.7); for (let i = 0; i < 6 + big * 8; i++) spark(ball.x, ball.y, ball.z, d.x * rnd(8, 22) + rnd(-3, 3), rnd(2, 9), d.z * rnd(8, 22) + rnd(-3, 3), shot.perfect ? 0xffe14a : 0xffffff, 0.1, 0.35, 6) }
   if (shot.lie === 'bunker') burst(ball.x, ball.y, ball.z, 26, [theme.sand, '#fff3c4'], 7, 9, 0.2, 0.8)
   audio.play(putt ? 'putt' : 'crack', putt ? 0.5 + p * 0.5 : 0.55 + p * 0.5, putt ? 1 : 0.9 + p * 0.25)
-  if (shot.perfect) { audio.play('perfect'); pop(t('perfect'), ball.x, ball.y + 2.2, ball.z, 'gold'); buzz([30, 30, 50]) } else buzz(putt ? 10 : 20 + p * 30)
+  if (shot.perfect) { mood('happy', 1.2); audio.play('perfect'); pop(t('perfect'), ball.x, ball.y + 2.2, ball.z, 'gold'); buzz([30, 30, 50]) } else buzz(putt ? 10 : 20 + p * 30)
   trailCol.set(shot.perfect ? 0xffd23a : 0xffffff); trailPts.length = 0
   swing.sq = putt ? 1.05 : 1.28; swing.sqV = 0
   platform.track('shot', { hole: game.hole + 1, club: shot.club, perfect: shot.perfect })
@@ -566,7 +662,8 @@ function stepSwing(dt) {
       else if (k < 1.02) { const u = (k - 0.9) / 0.12; swing.ang = lerp(-1.5, 0.2, u * u); swing.twist = lerp(-1.6, 0.2, u * u); if (!swing.idleHit) { swing.idleHit = true; swing.sq = 1.2 } }
       else if (k < 1.25) { const u = (k - 1.02) / 0.23; swing.ang = lerp(0.2, 1.7, 1 - (1 - u) ** 2); swing.twist = lerp(0.2, 1.8, 1 - (1 - u) ** 2) }
       else { const u = clamp((k - 2.2) / 0.8, 0, 1); swing.ang = lerp(1.7, 0, ease(u)); swing.twist = lerp(1.8, 0, ease(u)); swing.idleHit = false }
-    } else if (swing.cheer > 0) { swing.cheer += dt; swing.hop = Math.abs(Math.sin(swing.cheer * 9)) * 0.7; swing.ang = 2.9 + Math.sin(swing.cheer * 18) * 0.25; swing.twist = Math.sin(swing.cheer * 9) * 0.3 }
+    } else if (face.hold > 0 && face.mood === 'sad' && swing.cheer <= 0) { const k = 1 - Math.exp(-5 * dt); swing.ang = lerp(swing.ang, 0.35, k); swing.twist = lerp(swing.twist, 0.1, k); swing.hop = 0 }
+    else if (swing.cheer > 0) { swing.cheer += dt; swing.hop = Math.abs(Math.sin(swing.cheer * 9)) * 0.7; swing.ang = 2.25 + Math.sin(swing.cheer * 18) * 0.3; swing.twist = 0.35 + Math.sin(swing.cheer * 9) * 0.25 }
     else if (game.phase === 'aim') { // stage 1: the wind-up follows the pull
       const p = shot.dragging ? shot.power : 0, putt = shot.club === 'putter', k = 1 - Math.exp(-22 * dt)
       swing.ang = lerp(swing.ang, putt ? -0.75 * p : -1.5 * Math.pow(p, 0.7), k); swing.twist = lerp(swing.twist, putt ? 0 : -1.6 * Math.pow(p, 0.8), k)
@@ -591,11 +688,12 @@ function stepSwing(dt) {
 // what the ball tells us while it flies
 function ballEvent(name, a, b) {
   const x = ball.x, y = ball.y, z = ball.z
+  if (name === 'wood' || name === 'leaves') mood('wince', 1)
   if (name === 'bounce') {
     const s = a, v = Math.min(1, b / 26), first = ball.bounces === 1
     if (first && !shot.carryShown) { shot.carryShown = true; pop(`${Math.round(dist2(x, z, shot.from.x, shot.from.z))}${t('m')}`, x, y + 1.6, z, 'num') }
     if (b < 2.2) return
-    if (s === 'bunker') { burst(x, y, z, 30, [theme.sand, '#fff3c4', '#e8c878'], 6 + v * 5, 8 + v * 6, 0.2, 0.8); audio.play('sand', 0.5 + v * 0.5); mark(x, y - R, z, 0.9, 0x8a6a2c); if (first) pop(t('sand'), x, y + 2.6, z, 'bad') }
+    if (s === 'bunker') { burst(x, y, z, 30, [theme.sand, '#fff3c4', '#e8c878'], 6 + v * 5, 8 + v * 6, 0.2, 0.8); audio.play('sand', 0.5 + v * 0.5); mark(x, y - R, z, 0.9, 0x8a6a2c); if (first) { pop(t('sand'), x, y + 2.6, z, 'bad'); mood('wince', 1.2) } }
     else if (s === 'green') { burst(x, y, z, 8, [theme.green2, '#ffffff'], 3 + v * 3, 3 + v * 3, 0.11, 0.5); audio.play('green', 0.4 + v * 0.6, 1 + rnd(-0.1, 0.1)); mark(x, y - R, z, 0.3, 0x2a5a2a) }
     else { burst(x, y, z, Math.round(8 + v * 14), s === 'rough' ? [theme.rough2, theme.rough, '#6b4a2a'] : [theme.fair2, theme.fair, '#6b4a2a'], 4 + v * 5, 5 + v * 6, 0.15, 0.7); for (let i = 0; i < 6; i++) spark(x, y, z, rnd(-3, 3), rnd(1, 3), rnd(-3, 3), 0xfff8e0, 0.3, 0.5, -1); audio.play('thud', 0.35 + v * 0.65, 1 + rnd(-0.12, 0.12)); mark(x, y - R, z, 0.35 + v * 0.3, 0x2a4a22) }
     ring(x, y - R, z, 0.3, 1.2 + v * 2.4, 0.3)
@@ -603,8 +701,8 @@ function ballEvent(name, a, b) {
   } else if (name === 'water') {
     for (let i = 0; i < 46; i++) { const an = rnd(0, 6.3), sp = rnd(0.5, 4.5); spark(x, WATER_Y, z, Math.cos(an) * sp, rnd(6, 15), Math.sin(an) * sp, i % 3 ? 0xffffff : 0xbfeaff, rnd(0.12, 0.26), rnd(0.6, 1.1), 22) }
     ring(x, WATER_Y, z, 0.4, 3.5, 0.6); setTimeout(() => ring(x, WATER_Y, z, 0.4, 5, 0.8), 140); setTimeout(() => ring(x, WATER_Y, z, 0.4, 6, 1), 300)
-    audio.play('splash'); game.shake = Math.max(game.shake, 0.12); buzz(40); pop(t('water'), x, y + 2.4, z, 'bad')
-  } else if (name === 'ob') { pop(t('ob'), x, y + 2.4, z, 'bad'); audio.play('aw') }
+    audio.play('splash'); game.shake = Math.max(game.shake, 0.12); buzz(40); pop(t('water'), x, y + 2.4, z, 'bad'); mood('surprise', 0.5); setTimeout(() => mood('sad', 1.8), 450)
+  } else if (name === 'ob') { pop(t('ob'), x, y + 2.4, z, 'bad'); audio.play('aw'); mood('sad', 2) }
   else if (name === 'pad') { const l = live.pads.find((q) => q.p === a); if (l) l.kick = 1; audio.play('boing'); pop(t('boing'), x, y + 2.2, z, 'gold'); ring(x, y, z, 1, a[2] * 1.6, 0.35, 0xff8aa0); burst(x, y + 0.6, z, 14, ['#ffffff', '#ff8aa0', '#ffe14a'], 5, 7, 0.14, 0.6); buzz(20) }
   else if (name === 'boost') { const l = live.boosts.find((q) => q.p === a); if (l) l.kick = 1; audio.play('zoom'); pop(t('zoom'), x, y + 2.2, z, 'gold'); trailCol.set(0xff8a1e); game.punch = Math.max(game.punch, 0.6); buzz(20) }
   else if (name === 'leaves') { burst(x, y, z, 18, theme.leaf.map((c) => '#' + c.toString(16).padStart(6, '0')), 4, 3, 0.2, 0.9, 7, 1); audio.play('leaves') }
@@ -621,7 +719,7 @@ function holed() {
   audio.play('cup'); buzz(great ? [40, 40, 40, 40, 80] : 30)
   ring(px, py, pz, 0.6, 5, 0.5, 0xffe14a); game.shake = Math.max(game.shake, ball.dunk ? 0.3 : 0.1)
   if (good) { setTimeout(() => audio.play(great ? 'big' : 'cheer'), 180); for (let k = 0; k < (great ? 3 : 1); k++) setTimeout(() => { for (let i = 0; i < 44; i++) { const a = rnd(0, 6.3), s = rnd(2, 8); spark(px, py + 0.4, pz, Math.cos(a) * s, rnd(9, 18), Math.sin(a) * s, ['#ff4a6a', '#ffe14a', '#4ad2ff', '#7dff6a', '#ffffff', '#b06aff'][i % 6], rnd(0.16, 0.3), rnd(1.2, 2), 12, 1) } audio.play('pop', 1, 1 + k * 0.2) }, k * 260) }
-  else setTimeout(() => audio.play('aw'), 250)
+  else { setTimeout(() => audio.play('aw'), 250); mood('sad', 2.4) }
   if (ball.dunk) pop(t('dunk'), px, py + 3.4, pz, 'gold'); else if (shot.club !== 'putter') pop(t('chipin'), px, py + 3.4, pz, 'gold')
   banner(t(key), `${t('hole')} ${game.hole + 1} · ${game.strokes} ${t('stroke')}`, great ? 'great' : good ? 'good' : 'meh', 2.2)
   if (one) { save.hio++; flash(0.5) }
@@ -648,7 +746,7 @@ function penalty() { // water / out: one stroke, back where the shot was hit
 }
 function afterShot() {
   if (game.strokes >= course.H.par + 5) { // enough: pick the ball up and move on
-    game.phase = 'holed'; game.pt = 0; game.result = 'pickup'; audio.play('aw'); banner(t('pickup'), `${t('hole')} ${game.hole + 1} · ${game.strokes} ${t('stroke')}`, 'meh', 2); finishHole(game.strokes); return
+    game.phase = 'holed'; game.pt = 0; game.result = 'pickup'; audio.play('aw'); mood('sad', 2.4); banner(t('pickup'), `${t('hole')} ${game.hole + 1} · ${game.strokes} ${t('stroke')}`, 'meh', 2); finishHole(game.strokes); return
   }
   safeSpot(); const s = course.surf(ball.x, ball.z); game.canMull = !game.mullUsed && (game.lastBad || s === 'bunker') && (platform.ready || game.freeMull); game.lastBad = false
   setupShot()
@@ -844,6 +942,7 @@ function stepCamera(dt) {
   camera.position.copy(cam.pos)
   if (game.shake > 0.002 && save.shake) camera.position.add(v3.set(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(game.shake))
   camera.lookAt(cam.look)
+  if (game.camFix) { const f = game.camFix; camera.position.copy(golfer.localToWorld(v3.set(f[0], f[1], f[2]))); camera.lookAt(golfer.localToWorld(v2.set(f[3], f[4], f[5]))) } // ?debug: a close look at the golfer
   const fov = baseFov + game.punch * 7 - (game.phase === 'aim' && shot.dragging ? shot.power * 3 : 0)
   if (Math.abs(fov - camera.fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix() }
 }
@@ -936,7 +1035,7 @@ if (DEBUG) window.__dbg = {
   holeIn: () => { ball.x = course.pin[0] + 1.2; ball.z = course.pin[1] + 0.2; ball.y = course.h(ball.x, ball.z) + R; shot.fromTee = false; setupShot() },
   put: (x, z) => { ball.x = x; ball.z = z; ball.y = course.h(x, z) + R; shot.fromTee = false; ball.mode = 'rest'; setupShot() },
   drop: (x, z, vx = 0, vz = 0, vy = -14, hgt = 6) => { Object.assign(ball, { x, z, y: course.h(x, z) + R + hgt, vx, vy, vz, mode: hgt > 0 ? 'air' : 'roll', t: 0, bounces: 0 }); shot.fromTee = false; game.strokes++; game.phase = 'fly'; game.pt = 0 },
-  course: () => course,
+  course: () => course, cam: (f) => { game.camFix = f }, mood: (m, h) => mood(m, h),
   pos: () => ({ x: ball.x, y: ball.y, z: ball.z, v: Math.hypot(ball.vx, ball.vy, ball.vz), mode: ball.mode, surf: course.surf(ball.x, ball.z), phase: game.phase, pt: game.pt, power: shot.power, ideal: shot.ideal, club: shot.club }),
   end: endRun, pause: pauseRun, resume: resumeRun, settings: () => $('setBtn').click(), mull: () => { game.canMull = true; syncHud() },
   lang: (l) => { lang = l; document.documentElement.lang = l; syncHud(); if (game.state === 'title') showTitle() },
